@@ -1,0 +1,254 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/crow16384/ksTable/main/inst/schema/table_spec_v1.json",
+  "title": "ksTable Table Specification v1",
+  "description": "Declarative JSON DSL for ksTable — a pure-R generator that compiles table specifications into human-readable dplyr/tidyr scripts. The generated script is evaluated against a user-supplied data frame; calc and format functions are resolved by name from the evaluation environment.",
+  "type": "object",
+  "required": ["table_spec"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version string. Should be '1.0' for this schema.",
+      "enum": ["1.0"],
+      "default": "1.0"
+    },
+    "table_spec": {
+      "$ref": "#/definitions/table_spec"
+    }
+  },
+
+  "definitions": {
+
+    "r_identifier": {
+      "type": "string",
+      "description": "A valid R identifier: must start with a letter or a dot, followed by zero or more letters, digits, dots, or underscores. This constraint is enforced for security (SR-1 injection prevention): values that do not match cannot be safely embedded in generated R code.",
+      "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+      "examples": ["AGE", "TRT01P", "na.rm", "AESOC", "format_mean_sd"]
+    },
+
+    "table_spec": {
+      "type": "object",
+      "description": "Root table specification. Defines what to compute (statistics over parameters), how to group the data (groups), and how to arrange the output (layout).",
+      "required": ["parameter", "statistics", "groups", "layout"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Optional unique identifier for this table, used for caching and cross-references."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional human-readable title, passed to ksTFL for use in rendered output headers."
+        },
+        "parameter": {
+          "type": "object",
+          "description": "Named map of parameters. Each key is a parameter identifier (used internally); each value defines a variable in the input data frame. For parameter_stat layout, each parameter produces one block of rows. For hierarchical layout, exactly one parameter with a nested child is expected.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/definitions/parameter"
+          }
+        },
+        "statistics": {
+          "type": "object",
+          "description": "Named map of statistics. Each key is a statistic identifier; each value defines how to compute and display one statistic. The order of keys determines the row order in the output.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/definitions/statistic"
+          }
+        },
+        "groups": {
+          "$ref": "#/definitions/groups"
+        },
+        "layout": {
+          "$ref": "#/definitions/layout"
+        }
+      }
+    },
+
+    "parameter": {
+      "type": "object",
+      "description": "A parameter binds a display label to a column in the input data frame. In the generated script, the column name appears as a bare symbol inside dplyr::summarize() calls. For hierarchical tables, define exactly one top-level parameter with one nested child.",
+      "required": ["variable"],
+      "additionalProperties": false,
+      "properties": {
+        "variable": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "Column name in the input data frame, e.g. 'AGE' or 'AESOC'. Must be a valid R identifier (SR-1)."
+        },
+        "label": {
+          "type": "string",
+          "description": "Display label for this parameter, shown in the .param column of the output. Defaults to the variable name if omitted."
+        },
+        "nested": {
+          "type": "object",
+          "description": "One child parameter for the 'hierarchical' row structure. Defines the PT-level variable nested beneath the SOC-level parent. Must contain exactly one entry.",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/definitions/nested_parameter"
+          }
+        }
+      }
+    },
+
+    "nested_parameter": {
+      "type": "object",
+      "description": "Child parameter for hierarchical tables (e.g. Preferred Term under System Organ Class). The child variable produces the .row_label in child rows (.is_child = TRUE).",
+      "required": ["variable"],
+      "additionalProperties": false,
+      "properties": {
+        "variable": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "Child column name in the input data frame, e.g. 'AEDECOD'. Must be a valid R identifier (SR-1)."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional display label for child rows. Rarely used since .row_label already holds the child variable value."
+        }
+      }
+    },
+
+    "statistic": {
+      "type": "object",
+      "description": "One cell value in the output table. The compiler generates a dplyr::summarize() + dplyr::mutate() pair for each statistic. The compute step stores the raw value in .value_raw; the format step converts it to a display string in .value.",
+      "required": ["fun"],
+      "additionalProperties": false,
+      "properties": {
+        "fun": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "Name of the calc function resolved from the evaluation environment. Can be any R function: a user-defined function, a base-R function ('median', 'mean', 'sd'), or any function from an attached package. The function receives a column vector for one group and should return either a scalar (numeric, integer, character) or a named list. Must be a valid R identifier (SR-1)."
+        },
+        "args": {
+          "$ref": "#/definitions/function_args"
+        },
+        "label": {
+          "type": "string",
+          "description": "Display label shown in the .stat_label column of the output. Defaults to the statistic key if omitted."
+        },
+        "format": {
+          "$ref": "#/definitions/format_spec"
+        }
+      }
+    },
+
+    "function_args": {
+      "type": "object",
+      "description": "Extra named arguments appended to the fun(variable, ...) call in the generated script. Example: {\"na.rm\": true, \"probs\": 0.25} generates ', na.rm = TRUE, probs = 0.25'. Keys must be valid R identifiers (SR-1). Values are serialised to R literals: JSON true/false → R TRUE/FALSE; JSON null → R NULL; numbers and strings → corresponding R literals.",
+      "additionalProperties": {
+        "description": "Argument value. Supported JSON types: boolean, number, string, null.",
+        "oneOf": [
+          { "type": "boolean" },
+          { "type": "number"  },
+          { "type": "string"  },
+          { "type": "null"    }
+        ]
+      }
+    },
+
+    "format_spec": {
+      "type": "object",
+      "description": "Specification for converting the raw .value_raw to the display string .value. Every statistic has a formatter; when this field is omitted the default formatter is as.character(). All formatters must return a single character string per group.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Format type. Each type emits a different R expression in the generated script.\n\n'sprintf': scalar numeric → sprintf(pattern, .value_raw). The calc function must return a scalar.\n\n'custom': named-list → vapply(.value_raw, fun, character(1L)). The calc function must return a named list; the format function receives one list element and returns a character string.\n\n'template': named-list → vapply(.value_raw, function(.x) glue::glue_data(.x, pattern), character(1L)). Like 'custom' but uses a glue template string instead of a function.\n\n'ksformat': any → ksformat::fput(.value_raw, format_name). Applies a registered ksformat VALUE format.",
+          "enum": ["sprintf", "custom", "template", "ksformat"]
+        },
+        "pattern": {
+          "type": "string",
+          "description": "For type 'sprintf': a printf-style format string, e.g. '%.1f' or '%.0f%%'. For type 'template': a glue template string with named placeholders matching the keys of the named list returned by the calc function, e.g. '{mean} ({sd})' or '{n} ({pct}%)'."
+        },
+        "fun": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "For type 'custom': name of the format function in the evaluation environment. Must accept the named list returned by the calc function and return a single character string. Must be a valid R identifier (SR-1)."
+        },
+        "format_name": {
+          "type": "string",
+          "description": "For type 'ksformat': the name of a VALUE format registered in the ksformat package, e.g. 'trt_fmt'."
+        }
+      },
+      "allOf": [
+        {
+          "description": "Require 'pattern' when type is 'sprintf'.",
+          "if":   { "properties": { "type": { "const": "sprintf"  } }, "required": ["type"] },
+          "then": { "required": ["pattern"] }
+        },
+        {
+          "description": "Require 'fun' when type is 'custom'.",
+          "if":   { "properties": { "type": { "const": "custom"   } }, "required": ["type"] },
+          "then": { "required": ["fun"] }
+        },
+        {
+          "description": "Require 'pattern' when type is 'template'.",
+          "if":   { "properties": { "type": { "const": "template" } }, "required": ["type"] },
+          "then": { "required": ["pattern"] }
+        },
+        {
+          "description": "Require 'format_name' when type is 'ksformat'.",
+          "if":   { "properties": { "type": { "const": "ksformat" } }, "required": ["type"] },
+          "then": { "required": ["format_name"] }
+        }
+      ]
+    },
+
+    "groups": {
+      "type": "object",
+      "description": "Stratification specification. The 'by' columns determine the output column headers after pivot_wider.",
+      "required": ["by"],
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "type": "array",
+          "description": "Ordered array of column names to group by. The unique combinations of values in these columns become the column headers of the output tibble. Each entry must be a valid R identifier (SR-1).",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+            "description": "Column name. Must be a valid R identifier."
+          },
+          "examples": [["TRT01P"], ["TRT01P", "SEX"], ["TRT01P", "AVISIT"]]
+        },
+        "include_missing_levels": {
+          "type": "boolean",
+          "description": "When true, the generator emits group_by(..., .drop = FALSE) so that factor levels with zero observations in a group still appear as rows (with the default formatter's value, e.g. '0'). Requires the grouping columns to be factors with the complete set of levels before kst_generate_table() is called. Use kst_apply_metadata() to ensure correct factor levels.",
+          "default": false
+        },
+        "format": {
+          "type": "object",
+          "description": "Optional map from a grouping column name to a ksformat VALUE format name. When provided, ksformat labels are used to display group header values instead of the raw data values.",
+          "additionalProperties": {
+            "type": "string",
+            "description": "ksformat VALUE format name, e.g. 'trt_fmt'."
+          }
+        }
+      }
+    },
+
+    "layout": {
+      "type": "object",
+      "description": "Controls how rows and columns are organised in the output tibble.",
+      "required": ["row_structure"],
+      "additionalProperties": false,
+      "properties": {
+        "row_structure": {
+          "type": "string",
+          "description": "Row organisation strategy.\n\n'parameter_stat' (default): one output row per parameter × statistic combination. The output tibble has columns .param (parameter label) and .stat_label (statistic label) as row identifiers.\n\n'hierarchical': parent rows followed by child rows nested beneath each parent, sorted alphabetically within each parent. Requires exactly one top-level parameter with exactly one nested child. The output tibble has columns .parent, .is_child (FALSE = parent row, TRUE = child row), .row_label, and .stat_label as row identifiers. The .parent and .is_child columns are consumed by ksTFL to apply indentation and group headers.",
+          "enum": ["parameter_stat", "hierarchical"]
+        },
+        "column_structure": {
+          "type": "string",
+          "description": "Column organisation strategy. Currently only 'groups' is supported: each unique combination of the groups.by values becomes a separate output column. Column ordering follows first-appearance order in the data; use factor levels via kst_apply_metadata() to control ordering.",
+          "enum": ["groups"],
+          "default": "groups"
+        }
+      }
+    }
+
+  }
+}

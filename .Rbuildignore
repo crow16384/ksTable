@@ -1,0 +1,9 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.\.\Rcheck$
+^REVIEW\.md$
+^DSL_EXAMPLE\.md$
+^ARCHITECTURE\.md$
+^PLAN\.md$
+^REQUIREMENTS\.md$
+^LICENSE\.md$

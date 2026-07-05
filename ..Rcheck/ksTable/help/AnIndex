@@ -1,0 +1,7 @@
+ksTable-package	ksTable-package
+ksTable	ksTable-package
+kst_apply_metadata	kst_apply_metadata
+kst_compile	kst_compile
+kst_extract_metadata	kst_extract_metadata
+kst_generate_table	kst_generate_table
+kst_validate_spec	kst_validate_spec

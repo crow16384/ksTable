@@ -20,20 +20,12 @@ Description: Reads declarative JSON table specifications and uses a pure-R
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-Depends:
-    R (>= 4.1.0)
-Imports:
-    dplyr (>= 1.1.0),
-    tidyr (>= 1.3.0),
-    jsonlite (>= 1.8.0)
-Suggests:
-    ksformat (>= 0.7.0),
-    testthat (>= 3.0.0),
-    knitr,
-    rmarkdown,
-    glue (>= 1.7.0),
-    jsonvalidate (>= 1.3.2)
+Depends: R (>= 4.1.0)
+Imports: dplyr (>= 1.1.0), tidyr (>= 1.3.0), jsonlite (>= 1.8.0)
+Suggests: ksformat (>= 0.7.0), testthat (>= 3.0.0), knitr, rmarkdown,
+        glue (>= 1.7.0), jsonvalidate (>= 1.3.2)
 VignetteBuilder: knitr
 URL: https://github.com/crow16384/ksTable
 BugReports: https://github.com/crow16384/ksTable/issues
 Config/roxygen2/version: 8.0.0
+Built: R 4.6.1; ; 2026-07-05 13:29:39 UTC; unix

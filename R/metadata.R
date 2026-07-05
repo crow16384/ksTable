@@ -63,17 +63,19 @@ kst_extract_metadata <- function(data, variables, use_ksformat = TRUE) {
     levels <- NULL
     fmt    <- NULL
 
-    # 1. Try ksformat
+    # Optionally query ksformat for format metadata.
+    # Use dynamic dispatch to avoid R CMD check complaining about
+    # unexported ksformat functions when ksformat is not installed.
     if (has_ksformat) {
-      fmt <- tryCatch(
-        ksformat::fget(v),   # returns format name if registered
-        error = function(e) NULL
-      )
+      fmt <- tryCatch({
+        fget_fn <- getExportedValue("ksformat", "fget")
+        fget_fn(v)
+      }, error = function(e) NULL)
       if (!is.null(fmt)) {
-        levels <- tryCatch(
-          names(ksformat::flevels(fmt)),
-          error = function(e) NULL
-        )
+        levels <- tryCatch({
+          flevels_fn <- getExportedValue("ksformat", "flevels")
+          names(flevels_fn(fmt))
+        }, error = function(e) NULL)
       }
     }
 
