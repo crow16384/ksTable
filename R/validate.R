@@ -113,6 +113,15 @@ kst_validate_spec <- function(json_spec) {
         error = function(e) errors <<- c(errors, conditionMessage(e))
       )
     }
+    # Validate args key names (SR-1): values are R literals, keys must be identifiers
+    if (!is.null(s$args)) {
+      for (k in names(s$args)) {
+        tryCatch(
+          assert_id(k, paste0("statistics.", sn, ".args.", k)),
+          error = function(e) errors <<- c(errors, conditionMessage(e))
+        )
+      }
+    }
   }
 
   # 5. Validate group-by identifiers (SR-1)

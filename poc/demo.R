@@ -57,6 +57,8 @@ count_n <- function(data) length(data)                  # → integer
 format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 
 # ── Example 1: parameter_stat (Demographics) ─────────────────────────────────
+# mean_sd uses a custom calc+format pair; median uses a built-in function with
+# extra args supplied directly from the JSON spec ("args": {"na.rm": true}).
 demog_json <- '{
   "schema_version": "1.0",
   "table_spec": {
@@ -74,6 +76,11 @@ demog_json <- '{
         "fun": "mean_sd",
         "label": "Mean (SD)",
         "format": { "type": "custom", "fun": "format_mean_sd" }
+      },
+      "median": {
+        "fun": "median",
+        "args": { "na.rm": true },
+        "label": "Median"
       }
     },
     "groups": {

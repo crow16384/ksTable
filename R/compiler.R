@@ -35,6 +35,27 @@ gen_group_by <- function(vars, drop) {
          ") |>")
 }
 
+# Serialize a statistics `"args"` object to an extra-arguments string that
+# can be appended inside a function call.
+#   JSON: { "na.rm": true, "digits": 2 }  →  R: ", na.rm = TRUE, digits = 2"
+# Argument names are validated (SR-1). Values are type-converted to R literals.
+format_args <- function(args) {
+  if (is.null(args) || length(args) == 0L) return("")
+  nms   <- names(args)
+  parts <- character(length(args))
+  for (i in seq_along(args)) {
+    k    <- assert_id(nms[[i]], paste0("args.", nms[[i]]))
+    v    <- args[[i]]
+    rval <- if (is.logical(v))    { if (v) "TRUE" else "FALSE"
+             } else if (is.null(v))   { "NULL"
+             } else if (is.numeric(v)) { as.character(v)
+             } else if (is.character(v)) { r_str(v)
+             } else { as.character(v) }
+    parts[[i]] <- paste0(k, " = ", rval)
+  }
+  paste0(", ", paste(parts, collapse = ", "))
+}
+
 # TRUE when the format spec expects a list-returning calc function.
 # In that case the summarize result is wrapped in list() to form a list-column
 # that the format step can unpack element-wise via vapply().
@@ -87,10 +108,11 @@ gen_parameter_stat <- function(ts) {
       fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
       slbl <- r_str(s$label %||% sn)
 
+      extra    <- format_args(s$args)
       raw_expr <- if (needs_list_wrap(s$format)) {
-        paste0("list(", fun, "(", var, "))")    # list-column for named-list returns
+        paste0("list(", fun, "(", var, extra, "))")    # list-column for named-list returns
       } else {
-        paste0(fun, "(", var, ")")              # scalar: integer, double, or character
+        paste0(fun, "(", var, extra, ")")              # scalar: integer, double, or character
       }
       fmt_expr <- gen_format_expr(s)
 
@@ -144,8 +166,9 @@ gen_hierarchical <- function(ts) {
   fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
   slbl <- r_str(s$label %||% sn)
 
-  raw_expr_p <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", parent_var, "))") else paste0(fun, "(", parent_var, ")")
-  raw_expr_c <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", child_var,  "))") else paste0(fun, "(", child_var,  ")")
+  extra      <- format_args(s$args)
+  raw_expr_p <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", parent_var, extra, "))") else paste0(fun, "(", parent_var, extra, ")")
+  raw_expr_c <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", child_var,  extra, "))") else paste0(fun, "(", child_var,  extra, ")") 
   fmt_expr   <- gen_format_expr(s)
 
   c(".chunks <- list()", "",
