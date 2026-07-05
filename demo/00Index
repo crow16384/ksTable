@@ -1,0 +1,3 @@
+demography	Demographics table: age and BMI statistics by treatment group
+laboratory	Laboratory summary: liver function tests by treatment group and visit
+adverse_events	Adverse events: hierarchical event counts by SOC and PT
