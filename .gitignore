@@ -1,0 +1,17 @@
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+man/
+NAMESPACE
+*.o
+*.so
+*.dll
+src/*.o
+src/*.so
+
+# Build artifacts
+*.tar.gz
+*.zip
