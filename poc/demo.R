@@ -90,10 +90,15 @@ demog_json <- '{
 cat("Example 1 \u2500 Demographics (parameter_stat)\n\n")
 code1 <- poc_compile(demog_json)
 cat("Generated code:\n\n", code1, "\n\n")
-data <- adsl
-result1 <- eval(parse(text = code1))
+# Isolated execution: global env is parent so calc/format functions are visible;
+# intermediate objects (.chunks, .long) live in env1, not in globalenv.
+env1 <- new.env(parent = globalenv())
+env1$data <- adsl
+result1 <- eval(parse(text = code1), envir = env1)
 cat("Result:\n")
 print(result1, n = Inf)
+cat("Intermediate objects available for inspection: ",
+    paste(ls(env1, all.names = TRUE), collapse = ", "), "\n")
 
 # ── Example 2: hierarchical (Adverse Events) ─────────────────────────────────
 ae_json <- '{
@@ -127,8 +132,9 @@ ae_json <- '{
 cat("\nExample 2 \u2500 Adverse Events (hierarchical)\n\n")
 code2 <- poc_compile(ae_json)
 cat("Generated code:\n\n", code2, "\n\n")
-data <- ae
-result2 <- eval(parse(text = code2))
+env2 <- new.env(parent = globalenv())
+env2$data <- ae
+result2 <- eval(parse(text = code2), envir = env2)
 cat("Result:\n")
 print(result2, n = Inf)
 
