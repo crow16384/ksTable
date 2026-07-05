@@ -60,39 +60,33 @@ gen_format_expr <- function(s) {
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-#' Compile a JSON DSL spec to an R code string.
+#' Compile a JSON DSL spec to a self-contained R function definition.
+#'
+#' The returned string is a complete \code{function(data, calc_fns, format_fns)}
+#' definition: human-readable, paste-into-script-ready, and directly callable
+#' via \code{eval(parse(text = code))(data, calc_fns, format_fns)}.
 #'
 #' @param json_spec  JSON string (not a file path)
-#' @return  character(1) — valid R code, ready for eval()
+#' @return  character(1) — an R function definition
 poc_compile <- function(json_spec) {
   spec <- jsonlite::fromJSON(json_spec, simplifyVector = FALSE)
   ts   <- spec$table_spec
 
   row_structure <- ts$layout$row_structure %||% "parameter_stat"
 
-  lines <- switch(row_structure,
+  body_lines <- switch(row_structure,
     parameter_stat = gen_parameter_stat(ts),
     hierarchical   = gen_hierarchical(ts),
     stop("Unsupported row_structure: '", row_structure, "'", call. = FALSE)
   )
-  paste(lines, collapse = "\n")
-}
 
-#' Execute compiled code against data and calc functions.
-#'
-#' @param code        character(1) — from poc_compile()
-#' @param data        data.frame / tibble
-#' @param calc_fns    named list; names match "fun" values in JSON statistics.
-#'                    Functions return raw numeric / list values — NOT strings.
-#' @param format_fns  named list; names match "format.fun" values in JSON.
-#'                    Functions convert a raw list element to a character string.
-#' @return tibble
-poc_execute <- function(code, data, calc_fns, format_fns = list()) {
-  env             <- new.env(parent = parent.frame())
-  env$.data       <- data
-  env$calc_fns    <- calc_fns
-  env$format_fns  <- format_fns
-  eval(parse(text = code), envir = env)
+  # Indent body and wrap in a named-argument function definition
+  indented <- ifelse(nzchar(body_lines), paste0("  ", body_lines), "")
+  paste(c(
+    "function(data, calc_fns, format_fns = list()) {",
+    indented,
+    "}"
+  ), collapse = "\n")
 }
 
 # ── parameter_stat ────────────────────────────────────────────────────────────
@@ -124,7 +118,7 @@ gen_parameter_stat <- function(ts) {
       fmt_expr <- gen_format_expr(s)
 
       lines <- c(lines,
-        paste0(".chunks[[", idx, "L]] <- .data |>"),
+        paste0(".chunks[[", idx, "L]] <- data |>"),
         gen_group_by(gvars, drop = !inc_miss),
         "  dplyr::summarize(",
         paste0("    .value_raw  = ", raw_expr, ","),
@@ -189,7 +183,7 @@ gen_hierarchical <- function(ts) {
 
   c(".chunks <- list()", "",
     paste0("# Parent level: ", parent_var),
-    ".chunks[[1L]] <- .data |>",
+    ".chunks[[1L]] <- data |>",
     gen_group_by(c(gvars, parent_var), drop = TRUE),
     "  dplyr::summarize(",
     paste0("    .value_raw  = ", raw_expr_p, ","),
@@ -205,7 +199,7 @@ gen_hierarchical <- function(ts) {
     "  )",
     "",
     paste0("# Child level: ", child_var),
-    ".chunks[[2L]] <- .data |>",
+    ".chunks[[2L]] <- data |>",
     gen_group_by(c(gvars, parent_var, child_var), drop = TRUE),
     "  dplyr::summarize(",
     paste0("    .value_raw  = ", raw_expr_c, ","),
