@@ -100,20 +100,15 @@ kst_compile(json_spec, metadata = NULL)
 - Return R code string
 
 ```r
-kst_generate_table(json_spec, data, calc_functions, format_functions = list(), ...)
+kst_generate_table(json_spec, data, metadata = NULL, envir = parent.frame())
 ```
 
-- Extract metadata from data
-- Compile spec to R code
-- Execute generated code with `calc_functions` and `format_functions`
-- Return formatted tibble
+- Compile spec to R script
+- Create `new.env(parent = envir)` — isolated execution; caller's functions visible via parent
+- Bind `data`; eval script; return tibble
 
-**`calc_functions`**: named list; keys match `"fun"` values in JSON `statistics`.
-Functions receive a data vector and return raw numeric values or named lists.
-**No string coercion in calc functions.**
-
-**`format_functions`**: named list; keys match `"format.fun"` values in JSON.
-Functions receive a raw value (or named list) and return a single character string.
+Calc and format functions referenced in the JSON are resolved from `envir` as
+plain function calls — no lists to build, no registry to populate.
 
 ```r
 kst_validate_spec(json_spec)
@@ -125,17 +120,17 @@ kst_validate_spec(json_spec)
 
 ```r
 kst_extract_metadata(data, variables, use_ksformat = TRUE)
+kst_apply_metadata(data, metadata)
 ```
 
-- Query ksformat for format metadata
-- Extract factor levels (required for `.drop = FALSE` with `include_missing_levels`)
-- Return metadata list
+- Query ksformat for format metadata; extract factor levels
+- `kst_apply_metadata()` re-levels grouping columns so `.drop = FALSE` works
 
 **Dependencies**:
 
-- dplyr, tidyr, rlang (generated code environment)
-- ksformat (format metadata)
+- dplyr, tidyr (generated code)
 - jsonlite (JSON parsing)
+- ksformat (format metadata, optional)
 
 ---
 
@@ -230,12 +225,10 @@ Return to caller
 ### Execution Flow
 
 ```text
-R code string
+R code string (plain script, expects `data` in env)
   ↓
-[Create eval environment]
-  env$.data       ← input data frame
-  env$calc_fns    ← calc_functions list (raw-value producers)
-  env$format_fns  ← format_functions list (string renderers)
+[new.env(parent = envir)]          ← envir defaults to caller's frame
+  env$data ← input data frame     (calc/format functions visible via parent)
   ↓
 [eval(parse(text = code), envir = env)]
   ↓
@@ -243,7 +236,7 @@ R code string
   ↓
 Formatted tibble (all value columns are character)
   ↓
-Return to user
+Return to user; intermediate objects (.chunks, .long) remain in env, not globalenv
 ```
 
 ---

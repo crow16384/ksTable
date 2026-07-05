@@ -541,15 +541,22 @@ format_n_pct <- function(x) sprintf("%d (%.1f)", x$n, x$pct)
 format_median_range <- function(x) sprintf("%.1f [%.1f, %.1f]", x$median, x$min, x$max)
 ```
 
-### Wiring them together
+### Calling `kst_generate_table`
 
 ```r
-result <- kst_generate_table(
-  json_spec        = spec,
-  data             = adsl,
-  calc_functions   = list(count = count, mean_sd = mean_sd, count_pct = count_pct),
-  format_functions = list(format_mean_sd = format_mean_sd, format_n_pct = format_n_pct)
-)
+# Functions defined in the current environment are automatically visible —
+# no lists to build, no registry to populate.
+result <- kst_generate_table(spec, adsl)
+```
+
+For step-through debugging, compile first and run in an isolated env:
+
+```r
+code <- kst_compile(spec)
+env  <- new.env(parent = environment())
+env$data <- adsl
+result <- eval(parse(text = code), envir = env)
+# Inspect intermediate objects:  env$.chunks,  env$.long
 ```
 
 ---

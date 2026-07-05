@@ -2,7 +2,7 @@
 
 **Project**: JSON DSL to Dplyr Code Generator for Clinical Tables  
 **Date**: 2026-07-05  
-**Status**: Implementation Phase
+**Status**: Implementation Phase — Phases 1–4 in progress
 
 ## Overview
 
@@ -79,6 +79,7 @@ The generator calls `calc_fns` in `summarize()` and `format_fns` in `mutate()`. 
 ### Phase 1: JSON Schema & R Validator
 
 **Objective**: Define the DSL schema and implement pure-R validation
+**Status**: ✅ In progress (`R/validate.R` initial implementation complete)
 
 #### 1.1 Design JSON Schema
 
@@ -112,8 +113,9 @@ The generator calls `calc_fns` in `summarize()` and `format_fns` in `mutate()`. 
 ### Phase 2: R Code Generator
 
 **Objective**: Implement pure-R DSL → dplyr code generator
+**Status**: ✅ In progress (`R/compiler.R` initial implementation complete, validated by PoC)
 
-*Depends on Phase 1*
+*PoC findings*: ~130 µs/compile, plain R script output, `new.env(parent=envir)` execution pattern.
 
 #### 2.1 Implement `parameter_stat` Layout
 
@@ -225,9 +227,10 @@ Generate the correct R expression for each format spec type:
 
 ```r
 kst_compile(json_spec, metadata = NULL) -> character
-kst_generate_table(json_spec, data, calc_functions, format_functions = list(), ...) -> tibble
+kst_generate_table(json_spec, data, metadata = NULL, envir = parent.frame()) -> tibble
 kst_validate_spec(json_spec) -> list(valid, errors)
 kst_extract_metadata(data, variables, use_ksformat = TRUE) -> list
+kst_apply_metadata(data, metadata) -> data.frame
 ```
 
 **Deliverables**:
@@ -424,16 +427,15 @@ ksTable/
 ### Code Generation
 
 ✓ Compile demographics DSL: `code <- kst_compile(json_spec)`  
-✓ Review generated R code — should be readable `|>` pipe chains  
-✓ Verify expected structure: `group_by(TRT) |> summarize(.value_raw = calc_fns[["count"]](AGE))`  
+✓ Review generated R code — should be a readable plain R script  
+✓ Verify expected structure: `group_by(TRT) |> summarize(.value_raw = count(AGE))`  
 ✓ Verify format step: `mutate(.value = as.character(.value_raw))`  
 
 ### End-to-End Execution
 
-✓ Load sample dataset: `adsl <- tibble(USUBJID, AGE, TRT, SEX)`  
-✓ Define calc function: `count <- function(data) sum(!is.na(data))`  
-✓ Define format function: `format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)`  
-✓ Generate table: `result <- kst_generate_table(json_spec, adsl, list(count=count), list(format_mean_sd=format_mean_sd))`  
+✓ Define calc functions in calling env: `count <- function(data) sum(!is.na(data))`  
+✓ Define format functions in calling env: `format_mean_sd <- function(x) sprintf(...)`  
+✓ Generate table: `result <- kst_generate_table(json_spec, adsl)`  
 ✓ Verify output: tibble with all character value columns  
 ✓ Pass to ksTFL: `create_table(result) |> write_doc("demo.docx")`  
 

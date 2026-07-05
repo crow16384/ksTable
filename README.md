@@ -117,7 +117,7 @@ write_doc(report, "demographics.docx")
 
 - ✓ **Declarative DSL**: JSON specifications describe desired output
 - ✓ **Metadata-driven**: Introspects ksformat, factor levels, distinct values
-- ✓ **User calculations**: `calc_functions` list (raw values) + `format_functions` list (string rendering)
+- ✓ **User calculations**: define `calc` and `format` functions in your environment — no lists, no registry
 - ✓ **Multi-way stratification**: Group by multiple variables
 - ✓ **Hierarchical tables**: Nested structures (SOC → PT)
 - ✓ **Multiple format methods**: `sprintf`, `template`, `custom`, `ksformat`
@@ -224,14 +224,15 @@ remotes::install_github("crow16384/ksTable")
 }
 ```
 
-### 2. Define Calculation and Format Functions
+### 2. Define Calc and Format Functions
 
 ```r
-# calc_functions: return raw numeric values or named lists
+# calc functions: return raw numeric values or named lists
 count   <- function(data) sum(!is.na(data))
-mean_sd <- function(data) list(mean = mean(data, na.rm = TRUE), sd = sd(data, na.rm = TRUE))
+mean_sd <- function(data) list(mean = mean(data, na.rm = TRUE),
+                                sd   = sd(data,   na.rm = TRUE))
 
-# format_functions: convert raw value to display string
+# format functions: convert raw value to display string
 format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 ```
 
@@ -241,10 +242,8 @@ format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 library(ksTable)
 
 result <- kst_generate_table(
-  json_spec        = "table_spec.json",
-  data             = my_data,
-  calc_functions   = list(count = count, mean_sd = mean_sd),
-  format_functions = list(format_mean_sd = format_mean_sd)
+  json_spec = "table_spec.json",
+  data      = my_data
 )
 ```
 

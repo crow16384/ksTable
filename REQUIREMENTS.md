@@ -304,26 +304,28 @@ kst_compile(json_spec, metadata = NULL, optimize = TRUE) -> character
 
 - `json_spec`: JSON string or file path
 - `metadata`: Optional pre-extracted metadata
-- `optimize`: Enable query optimization
 
-**Output**: R code string
+**Output**: R code string (plain script, expects `data` in eval env)
 
 **Errors**: Parsing errors, validation errors, compilation errors
 
 ### IR-2: Table Generation Interface
 
 ```r
-kst_generate_table(json_spec, data, calc_functions, ...) -> tibble
+kst_generate_table(json_spec, data, metadata = NULL, envir = parent.frame()) -> tibble
 ```
 
 **Input**:
 
 - `json_spec`: JSON string or file path
 - `data`: Source data frame
-- `calc_functions`: Named list of functions
-- `...`: Additional arguments
+- `metadata`: Optional pre-extracted metadata
+- `envir`: Environment for resolving calc/format functions (default: caller's frame)
 
 **Output**: Formatted tibble ready for ksTFL
+
+**Notes**: Calc and format functions are resolved from `envir` as plain function calls;
+  no lists or registry needed. Execution is isolated in `new.env(parent = envir)`.
 
 **Errors**: Missing functions, data errors, calculation errors
 
