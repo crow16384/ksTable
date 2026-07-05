@@ -42,21 +42,19 @@ ae <- tibble(
   AEDECOD = ae_pt
 )
 
-# ── Calculation functions: return raw values, NOT strings ────────────────────
-# calc_fns  → raw numeric / list  (no string coercion here)
-# format_fns → convert a raw value or named list to a character string
-calc_fns <- list(
-  count   = function(data) sum(!is.na(data)),             # → integer
-  mean_sd = function(data) list(                          # → named list
-    mean = mean(data, na.rm = TRUE),
-    sd   = sd(data,   na.rm = TRUE)
-  ),
-  count_n = function(data) length(data)                   # → integer
-)
+# ── Calculation and format functions ────────────────────────────────────────
+# Referenced by name in the JSON spec; resolved from the environment at runtime.
+# calc functions   → return raw numeric or named list (no string coercion)
+# format functions → convert a raw value or named list to a display string
 
-format_fns <- list(
-  format_mean_sd = function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
+count   <- function(data) sum(!is.na(data))             # → integer
+mean_sd <- function(data) list(                         # → named list
+  mean = mean(data, na.rm = TRUE),
+  sd   = sd(data,   na.rm = TRUE)
 )
+count_n <- function(data) length(data)                  # → integer
+
+format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 
 # ── Example 1: parameter_stat (Demographics) ─────────────────────────────────
 demog_json <- '{
@@ -92,7 +90,7 @@ demog_json <- '{
 cat("Example 1 \u2500 Demographics (parameter_stat)\n\n")
 code1 <- poc_compile(demog_json)
 cat("Generated code:\n\n", code1, "\n\n")
-result1 <- eval(parse(text = code1))(adsl, calc_fns, format_fns)
+result1 <- eval(parse(text = code1))(adsl)
 cat("Result:\n")
 print(result1, n = Inf)
 
@@ -128,7 +126,7 @@ ae_json <- '{
 cat("\nExample 2 \u2500 Adverse Events (hierarchical)\n\n")
 code2 <- poc_compile(ae_json)
 cat("Generated code:\n\n", code2, "\n\n")
-result2 <- eval(parse(text = code2))(ae, calc_fns)
+result2 <- eval(parse(text = code2))(ae)
 cat("Result:\n")
 print(result2, n = Inf)
 

@@ -47,7 +47,7 @@ gen_format_expr <- function(s) {
     sprintf  = sprintf('sprintf(%s, .value_raw)', r_str(fmt$pattern %||% "%s")),
     custom   = {
       f <- assert_id(fmt$fun, "format.fun")
-      sprintf('vapply(.value_raw, format_fns[["%s"]], character(1L))', f)
+      sprintf('vapply(.value_raw, %s, character(1L))', f)
     },
     template = {
       sprintf('vapply(.value_raw, function(.x) glue::glue_data(.x, %s), character(1L))',
@@ -62,12 +62,15 @@ gen_format_expr <- function(s) {
 
 #' Compile a JSON DSL spec to a self-contained R function definition.
 #'
-#' The returned string is a complete \code{function(data, calc_fns, format_fns)}
-#' definition: human-readable, paste-into-script-ready, and directly callable
-#' via \code{eval(parse(text = code))(data, calc_fns, format_fns)}.
+#' Returns a complete \code{function(data)} definition.
+#' Calculation and format functions referenced in the JSON spec are emitted as
+#' plain function calls (e.g., \code{count(AGE)}, \code{format_mean_sd}) and
+#' resolved from the calling environment at runtime — global env, attached
+#' packages, or wherever the caller has them in scope.
+#' Callable as: \code{eval(parse(text = code))(data)}
 #'
 #' @param json_spec  JSON string (not a file path)
-#' @return  character(1) — an R function definition
+#' @return  character(1) — a \code{function(data)} definition
 poc_compile <- function(json_spec) {
   spec <- jsonlite::fromJSON(json_spec, simplifyVector = FALSE)
   ts   <- spec$table_spec
@@ -80,10 +83,10 @@ poc_compile <- function(json_spec) {
     stop("Unsupported row_structure: '", row_structure, "'", call. = FALSE)
   )
 
-  # Indent body and wrap in a named-argument function definition
+  # Indent body and wrap in a single-argument function definition
   indented <- ifelse(nzchar(body_lines), paste0("  ", body_lines), "")
   paste(c(
-    "function(data, calc_fns, format_fns = list()) {",
+    "function(data) {",
     indented,
     "}"
   ), collapse = "\n")
@@ -111,9 +114,9 @@ gen_parameter_stat <- function(ts) {
       slbl <- r_str(s$label %||% sn)
 
       raw_expr <- if (needs_list_wrap(s$format)) {
-        paste0('list(calc_fns[["', fun, '"]](' , var, "))")  # list-column for multi-field returns
+        paste0("list(", fun, "(", var, "))")  # list-column for multi-field returns
       } else {
-        paste0('calc_fns[["', fun, '"]](' , var, ")")        # scalar: integer, double, or character
+        paste0(fun, "(", var, ")")             # scalar: integer, double, or character
       }
       fmt_expr <- gen_format_expr(s)
 
@@ -170,14 +173,14 @@ gen_hierarchical <- function(ts) {
   slbl <- r_str(s$label %||% sn)
 
   raw_expr_p <- if (needs_list_wrap(s$format)) {
-    paste0('list(calc_fns[["', fun, '"]](' , parent_var, "))")
+    paste0("list(", fun, "(", parent_var, "))")
   } else {
-    paste0('calc_fns[["', fun, '"]](' , parent_var, ")")
+    paste0(fun, "(", parent_var, ")")
   }
   raw_expr_c <- if (needs_list_wrap(s$format)) {
-    paste0('list(calc_fns[["', fun, '"]](' , child_var, "))")
+    paste0("list(", fun, "(", child_var, "))")
   } else {
-    paste0('calc_fns[["', fun, '"]](' , child_var, ")")
+    paste0(fun, "(", child_var, ")")
   }
   fmt_expr <- gen_format_expr(s)
 
