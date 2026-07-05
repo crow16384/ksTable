@@ -2,8 +2,9 @@
 
 **JSON DSL to Dplyr Code Generator for Clinical Tables**
 
-[![License: GPL-3](https://img.shields.io/badge/License-GPL%203-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![R: ≥ 4.1](https://img.shields.io/badge/R-%E2%89%A5%204.1-blue.svg)](https://www.r-project.org/)
+[![GitHub issues](https://img.shields.io/github/issues/crow16384/ksTable)](https://github.com/crow16384/ksTable/issues)
 
 > **Status**: Implementation Phase (v0.1.0-dev)
 
@@ -356,9 +357,7 @@ Support for ksformat, sprintf templates, and custom format functions. Users can 
 
 ## License
 
-GPL-3.0
-
-Copyright (c) 2026 [Your Name/Organization]
+MIT License — Copyright (c) 2026 [Vladimir Larchenko](mailto:crow16384@gmail.com)
 
 ---
 
@@ -366,7 +365,7 @@ Copyright (c) 2026 [Your Name/Organization]
 
 - **Issues**: [GitHub Issues](https://github.com/crow16384/ksTable/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/crow16384/ksTable/discussions)
-- **Email**: [your-email@example.com]
+- **Author**: [Vladimir Larchenko](mailto:crow16384@gmail.com)
 
 ---
 
@@ -379,4 +378,5 @@ Copyright (c) 2026 [Your Name/Organization]
 ---
 
 **Last Updated**: 2026-07-05  
-**Version**: 0.1.0-dev (Implementation Phase)
+**Version**: 0.1.0-dev (Implementation Phase)  
+**Author**: [Vladimir Larchenko](mailto:crow16384@gmail.com)
