@@ -1,12 +1,217 @@
 ### ksTable demo: ksformat Integration
 ###
-### Shows how ksformat VALUE formats interact with ksTable:
+### One JSON spec covering Age (years), BMI, and Sex in a demographics table.
+### ksformat is used for:
 ###
-###  1. Column headers  -- ksformat labels as pivot column names
-###  2. Factor levels   -- ksformat keys drive include_missing_levels
-###  3. Cell formatting -- statistics.format.type = "ksformat"
+###  1. Treatment arm column headers  -- "PBO" -> "Placebo" etc.
+###  2. include_missing_levels        -- absent arm still gets a column
+###  3. Sex cell formatting           -- modal sex code "M"/"F" -> "Male"/"Female"
 ###
 ### Requires: remotes::install_github("crow16384/ksformat")
+
+library(ksTable)
+
+if (!requireNamespace("ksformat", quietly = TRUE))
+  stop("This demo requires ksformat: ",
+       'remotes::install_github("crow16384/ksformat")')
+
+library(ksformat)
+
+## -- 1. Register VALUE formats -----------------------------------------------
+
+fnew("PBO"  = "Placebo",
+     "D50"  = "Drug A 50 mg",
+     "D100" = "Drug A 100 mg",   # registered but absent from data (missing level demo)
+     name   = "trt_fmt")
+
+fnew("M" = "Male", "F" = "Female", .missing = "Unknown", name = "sex_fmt")
+
+## -- 2. Synthetic ADSL -------------------------------------------------------
+##
+## Two arms only (PBO, D50); D100 is absent to exercise include_missing_levels.
+
+set.seed(42L)
+n    <- 240L
+adsl <- data.frame(
+  USUBJID = sprintf("SUBJ-%04d", seq_len(n)),
+  AGE     = round(rnorm(n, mean = 52, sd = 14)),
+  BMIBL   = round(rnorm(n, mean = 26.5, sd = 4.8), 1),
+  TRT01P  = sample(c("PBO", "D50"), n, replace = TRUE),
+  SEX     = sample(c("M", "F"), n, replace = TRUE, prob = c(0.55, 0.45)),
+  stringsAsFactors = FALSE
+)
+
+## -- 3. Calc and format functions --------------------------------------------
+##
+## Because ONE spec covers both numeric (AGE, BMIBL) and categorical (SEX)
+## parameters, every calc function must handle either type gracefully:
+##   - Numeric stats return NA for character columns (shown as blank "")
+##   - Sex counts return NA for numeric columns (shown as blank "")
+## This mirrors how clinical demographics tables leave cells blank rather
+## than showing "0" or "NA" for inapplicable combinations.
+
+## Continuous stats -- safe versions that return NA for character input
+mean_sd <- function(data) {
+  if (!is.numeric(data)) return(list(mean = NA_real_, sd = NA_real_))
+  list(mean = mean(data, na.rm = TRUE), sd = sd(data, na.rm = TRUE))
+}
+format_mean_sd <- function(x) {
+  if (is.na(x$mean)) return("")
+  sprintf("%.1f (%.2f)", x$mean, x$sd)
+}
+
+median_safe <- function(data) {
+  if (!is.numeric(data)) return(NA_real_)
+  median(data, na.rm = TRUE)
+}
+format_num_or_blank <- function(x) if (is.na(x) || is.infinite(x)) "" else sprintf("%.1f", x)
+
+min_safe <- function(data) { if (!is.numeric(data)) NA_real_ else min(data, na.rm = TRUE) }
+max_safe <- function(data) { if (!is.numeric(data)) NA_real_ else max(data, na.rm = TRUE) }
+
+## Categorical stats -- return NA for numeric columns (blank in output)
+n_male   <- function(data) if (is.numeric(data)) NA_integer_ else sum(data == "M", na.rm = TRUE)
+n_female <- function(data) if (is.numeric(data)) NA_integer_ else sum(data == "F", na.rm = TRUE)
+fmt_int_or_blank <- function(x) if (is.na(x)) "" else as.character(x)
+
+## Modal sex code per group; NA for numeric variables.
+## Custom format wrapper: blank for NA, ksformat label for actual codes.
+mode_sex <- function(data) {
+  if (is.numeric(data)) return(NA_character_)
+  tbl <- sort(table(data[!is.na(data)]), decreasing = TRUE)
+  if (length(tbl) == 0L) NA_character_ else names(tbl)[[1L]]
+}
+fmt_sex_or_blank <- function(x) {
+  if (is.na(x)) return("")
+  ksformat::fput(x, "sex_fmt")   # "M" -> "Male", "F" -> "Female"
+}
+
+## -- 4. One JSON spec: AGE + BMI + SEX ----------------------------------------
+##
+## parameters:
+##   age  (AGE)   -- continuous: n, mean (SD), median, min, max
+##   bmi  (BMIBL) -- continuous: n, mean (SD), median
+##   sex  (SEX)   -- categorical: total n, n Male, n Female, modal sex (ksformat)
+##
+## groups.format references "trt_fmt" so kst_generate_table() auto-applies
+## fput() labels and sets factor levels (including the absent D100 arm).
+
+demographics_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id":    "demographics",
+    "title": "Baseline Demographic Characteristics",
+    "parameter": {
+      "age": {
+        "variable": "AGE",
+        "label":    "Age (years)"
+      },
+      "bmi": {
+        "variable": "BMIBL",
+        "label":    "BMI at Baseline (kg/m2)"
+      },
+      "sex": {
+        "variable": "SEX",
+        "label":    "Sex"
+      }
+    },
+    "statistics": {
+      "n": {
+        "fun":   "length",
+        "label": "N"
+      },
+      "mean_sd": {
+        "fun":    "mean_sd",
+        "label":  "Mean (SD)",
+        "format": { "type": "custom", "fun": "format_mean_sd" }
+      },
+      "median": {
+        "fun":    "median_safe",
+        "label":  "Median",
+        "format": { "type": "custom", "fun": "format_num_or_blank" }
+      },
+      "min": {
+        "fun":    "min_safe",
+        "label":  "Min",
+        "format": { "type": "custom", "fun": "format_num_or_blank" }
+      },
+      "max": {
+        "fun":    "max_safe",
+        "label":  "Max",
+        "format": { "type": "custom", "fun": "format_num_or_blank" }
+      },
+      "n_male": {
+        "fun":    "n_male",
+        "label":  "Male n",
+        "format": { "type": "custom", "fun": "fmt_int_or_blank" }
+      },
+      "n_female": {
+        "fun":    "n_female",
+        "label":  "Female n",
+        "format": { "type": "custom", "fun": "fmt_int_or_blank" }
+      },
+      "mode_sex": {
+        "fun":    "mode_sex",
+        "label":  "Most common",
+        "format": { "type": "custom", "fun": "fmt_sex_or_blank" }
+      }
+    },
+    "groups": {
+      "by": ["TRT01P"],
+      "include_missing_levels": true,
+      "format": { "TRT01P": "trt_fmt" }
+    },
+    "layout": {
+      "row_structure":    "parameter_stat",
+      "column_structure": "groups"
+    }
+  }
+}'
+
+## -- 5. Validate the spec ----------------------------------------------------
+
+v <- kst_validate_spec(demographics_spec)
+if (!v$valid) stop(paste(v$errors, collapse = "\n"))
+cat("Spec validation:", v$engine, "-> PASS\n\n")
+
+## -- 6. Generate the table ---------------------------------------------------
+##
+## kst_generate_table() detects groups.format, calls kst_extract_metadata()
+## with format_map = list(TRT01P = "trt_fmt"), then kst_apply_metadata() to:
+##   - replace "PBO"/"D50" with "Placebo"/"Drug A 50 mg" via fput()
+##   - set TRT01P as an ordered factor with all three levels (incl. absent D100)
+## Result columns are the formatted arm labels; "Drug A 100 mg" column is
+## present but shows default as.character() output (0/NA) as it has no data.
+
+cat("-- Generated script (first 20 lines) ------------------------------------\n")
+code <- kst_compile(demographics_spec)
+cat(paste(head(strsplit(code, "\n")[[1L]], 20L), collapse = "\n"), "\n...\n\n")
+
+cat("-- Demographics Table ---------------------------------------------------\n")
+result <- kst_generate_table(demographics_spec, adsl)
+print(result, n = Inf, width = 140)
+
+## -- 7. Inspect rows per parameter ------------------------------------------
+
+cat("\n-- Age rows only --------------------------------------------------------\n")
+print(result[result$.param == "Age (years)", ], width = 140)
+
+cat("\n-- Sex rows only --------------------------------------------------------\n")
+print(result[result$.param == "Sex", ], width = 140)
+
+## -- 8. Save the script to a file -------------------------------------------
+
+tmp <- tempfile(fileext = ".R")
+kst_save(demographics_spec, tmp)
+cat("\n-- Saved script header -------------------------------------------------\n")
+cat(paste(head(readLines(tmp), 10L), collapse = "\n"), "\n")
+
+## -- 9. Clean up the global format library ----------------------------------
+
+fclear()
+cat("\nFormats after fclear(): ")
+fprint()
+
 
 library(ksTable)
 
