@@ -1,7 +1,7 @@
 # ksTable Requirements Document
 
-**Date**: 2026-07-01  
-**Version**: 1.0
+**Date**: 2026-07-05  
+**Version**: 2.0
 
 ---
 
@@ -10,7 +10,7 @@
 ### In Scope
 
 ✓ JSON DSL for declarative table specifications  
-✓ C++23 compiler generating dplyr/tidyr R code  
+✓ Pure-R generator producing dplyr/tidyr R code  
 ✓ Metadata introspection (ksformat, factors, distinct values)  
 ✓ User-provided calculation functions  
 ✓ Multi-way stratification and grouping  
@@ -82,11 +82,11 @@
 **Rationale**: Users need to review/debug generated code  
 **Acceptance**: Uses pipe chains, descriptive variable names  
 
-### UR-9: Optimization
+### UR-9: Performance
 
-**Description**: Compiler shall optimize query plans  
-**Rationale**: Justifies C++ complexity vs pure R solution  
-**Acceptance**: Redundant operations eliminated, efficient execution  
+**Description**: Generated code shall execute efficiently  
+**Rationale**: Users expect fast table generation even for large datasets  
+**Acceptance**: Compilation < 1 ms; execution comparable to hand-written dplyr  
 
 ### UR-10: Clear Error Messages
 
@@ -100,9 +100,9 @@
 
 ### FR-1: JSON Parsing
 
-**Description**: Parse JSON DSL into C++ data structures  
+**Description**: Parse JSON DSL into R data structures  
 **Input**: JSON string or file path  
-**Output**: Parsed specification object  
+**Output**: Parsed specification as R list  
 **Validation**: Valid JSON matching schema  
 **Error Handling**: Syntax errors, schema violations  
 
@@ -194,11 +194,11 @@
 **Rationale**: Reasonable for desktop R sessions  
 **Measurement**: Profile with valgrind, R profiling tools  
 
-### NFR-3: Reliability - No Memory Leaks
+### NFR-3: Reliability - No Crashes
 
-**Requirement**: No memory leaks in C++ code  
-**Rationale**: Long-running R sessions  
-**Measurement**: valgrind, sanitizers  
+**Requirement**: All errors caught and reported gracefully; no R session crashes  
+**Rationale**: Users expect stable behaviour in long-running sessions  
+**Measurement**: Error injection testing  
 
 ### NFR-4: Reliability - Error Handling
 
@@ -220,9 +220,9 @@
 
 ### NFR-7: Maintainability - Code Quality
 
-**Requirement**: Modern C++23, standard R practices  
+**Requirement**: Modern idiomatic R, standard package practices  
 **Rationale**: Long-term maintainability  
-**Measurement**: Code reviews, style checks  
+**Measurement**: Code reviews, style checks (`lintr`)  
 
 ### NFR-8: Maintainability - Test Coverage
 
@@ -238,19 +238,19 @@
 
 ### NFR-10: Compatibility - R Version
 
-**Requirement**: R ≥ 4.6  
-**Rationale**: Native pipe, modern Rcpp  
-**Measurement**: Test on R 4.6
+**Requirement**: R ≥ 4.1  
+**Rationale**: Native pipe `|>` (R 4.1), no compiled code  
+**Measurement**: Test on R 4.1
 
 ---
 
 ## Technical Requirements
 
-### TR-1: C++ Standard
+### TR-1: R Standard
 
-**Requirement**: C++23  
-**Rationale**: Modern features (ranges, concepts, constexpr)  
-**Dependencies**: Compiler support (gcc ≥ 13, clang ≥ 17)  
+**Requirement**: R ≥ 4.1.0  
+**Rationale**: Native pipe `|>`, modern tidyverse ecosystem  
+**Dependencies**: No compiler requirements  
 
 ### TR-2: R Package Dependencies
 
@@ -261,34 +261,21 @@
 - rlang (≥ 1.1.0)
 - ksformat (≥ 0.7.0)
 - jsonlite (≥ 1.8.0)
-- Rcpp (≥ 1.0.12)
 
 **Suggests**:
 
 - testthat (≥ 3.0.0)
 - knitr
 - rmarkdown
+- glue (≥ 1.7.0, for `template` format type)
 
-### TR-3: C++ Library Dependencies
-
-**Required**:
-
-- Boost.JSON (≥ 1.80)
-- fmt (≥ 10.0)
-- range-v3 (≥ 0.12)
-
-**Optional**:
-
-- Catch2 (for C++ unit tests)
-
-### TR-4: Build System
+### TR-3: Build System
 
 **Requirements**:
 
-- Standard R package build tools
-- Rcpp build integration
-- C++23 compiler flags
-- Link to Boost libraries
+- Standard R package build tools (`devtools`, `roxygen2`)
+- No `src/` directory, no `Makevars`, no compiled code
+- `R CMD check` passes with no notes on Windows/macOS/Linux
 
 ### TR-5: File Formats
 
@@ -364,15 +351,19 @@ kst_extract_metadata(data, variables, use_ksformat = TRUE) -> list
 
 **Output**: Metadata list (types, levels, formats)
 
-### IR-5: Function Registration Interface
+---
 
-```r
-kst_register_calc(name, fn, replace = FALSE) -> invisible(NULL)
-kst_list_calc() -> character
-kst_get_calc(name) -> function
-```
+## Security Requirements
 
-**Purpose**: Manage calculation function registry
+### SR-1: Code Injection Prevention
+
+**Description**: All JSON-derived values used in generated R code must be sanitized before emission
+
+**Identifiers** (`variable`, `fun`, `format.fun`, `by` items): validated against `^[A-Za-z.][A-Za-z0-9._]*$`; any value that does not match must be rejected with an informative error.
+
+**String literals** (`label`, `pattern`): `\` escaped to `\\` and `"` escaped to `\"`before embedding in double-quoted R strings.
+
+**Coverage**: applied to every JSON field before any code is emitted, in `R/compiler.R`.
 
 ---
 
@@ -469,8 +460,8 @@ median_range <- function(data) {
 
 ### QA-1: Unit Testing
 
-**Coverage**: > 80% for R and C++ code  
-**Framework**: testthat (R), Catch2 (C++)  
+**Coverage**: > 80% for R code  
+**Framework**: testthat  
 **Scope**: All major functions, edge cases, error paths  
 
 ### QA-2: Integration Testing
@@ -516,7 +507,7 @@ median_range <- function(data) {
 
 ### Milestone 3: Complete Package (Phase 5)
 
-✓ Rcpp integration complete  
+✓ Package builds with `devtools::build()` on all platforms  
 ✓ All helper functions implemented  
 ✓ Package builds and installs  
 
@@ -544,11 +535,11 @@ median_range <- function(data) {
 
 ## Risk Assessment
 
-### Risk 1: C++ Complexity
+### Risk 1: DSL Schema Complexity
 
 **Probability**: Medium  
 **Impact**: High  
-**Mitigation**: Start simple, iterate; use modern C++23 features  
+**Mitigation**: Provide helpers, comprehensive examples, and good validation error messages  
 
 ### Risk 2: DSL Design Inadequate
 

@@ -4,8 +4,8 @@ marp: false
 
 # ksTable Architecture Document
 
-**Version**: 1.0  
-**Date**: 2026-07-01
+**Version**: 2.0  
+**Date**: 2026-07-05
 
 ---
 
@@ -16,71 +16,36 @@ marp: false
 │                          User Space                            │
 │                                                                │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐        │
-│  │ JSON DSL     │   │ Input Data   │   │ Calculation  │        │
-│  │ Specification│   │ (tibble)     │   │ Functions    │        │
+│  │ JSON DSL     │   │ Input Data   │   │ calc_fns /   │        │
+│  │ Specification│   │ (tibble)     │   │ format_fns   │        │
 │  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘        │
 │         │                  │                  │                │
 └─────────┼──────────────────┼──────────────────┼────────────────┘
           │                  │                  │
-          │                  │                  │
-┌─────────▼──────────────────▼──────────────────▼─────────────────┐
+          ▼                  │                  │
+┌─────────────────────────────▼──────────────────▼────────────────┐
 │                       ksTable Package                           │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                   R Layer (Public API)                   │   │
 │  │                                                          │   │
-│  │  kst_compile()                                           │   │
-│  │  kst_generate_table()                                    │   │
-│  │  kst_validate_spec()                                     │   │
-│  │  kst_extract_metadata()                                  │   │
+│  │  kst_compile()          kst_validate_spec()              │   │
+│  │  kst_generate_table()   kst_extract_metadata()           │   │
 │  │                                                          │   │
 │  └───────────────────────┬──────────────────────────────────┘   │
 │                          │                                      │
 │                          ▼                                      │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │               Rcpp Interface Layer                       │   │
-│  │                                                          │   │
-│  │  compile_spec() [Rcpp wrapper]                           │   │
-│  │  validate_json() [Rcpp wrapper]                          │   │
-│  │                                                          │   │
-│  └───────────────────────┬──────────────────────────────────┘   │
-│                          │                                      │
-│                          ▼                                      │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              C++23 Compiler Core                         │   │
+│  │             R Generator  (R/compiler.R)                  │   │
 │  │                                                          │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │   │
-│  │  │   Parser     │→ │  Validator   │→ │   Metadata   │    │   │
-│  │  │  (Boost.JSON)│  │              │  │   Consumer   │    │   │
+│  │  │  Parser /    │→ │  Metadata    │→ │    Code      │    │   │
+│  │  │  Validator   │  │  Resolver    │  │  Generator   │    │   │
+│  │  │ (jsonlite)   │  │              │  │              │    │   │
 │  │  └──────────────┘  └──────────────┘  └──────┬───────┘    │   │
 │  │                                             │            │   │
-│  │                          ┌──────────────────┘            │   │
-│  │                          ▼                               │   │
-│  │  ┌──────────────────────────────────────────────────┐    │   │
-│  │  │            AST Builder & Optimizer               │    │   │
-│  │  │                                                  │    │   │
-│  │  │  • Query Plan Construction                       │    │   │
-│  │  │  • Redundancy Elimination                        │    │   │
-│  │  │  • Operation Reordering                          │    │   │
-│  │  └──────────────────────┬───────────────────────────┘    │   │
-│  │                         │                                │   │
-│  │                         ▼                                │   │
-│  │  ┌──────────────────────────────────────────────────┐    │   │
-│  │  │         Code Generation Modules                  │    │   │
-│  │  │                                                  │    │   │
-│  │  │  ┌─────────────┐  ┌─────────────┐                │    │   │
-│  │  │  │   Dplyr     │  │  Tidyr      │                │    │   │
-│  │  │  │   CodeGen   │  │  CodeGen    │                │    │   │
-│  │  │  └─────────────┘  └─────────────┘                │    │   │
-│  │  │                                                  │    │   │
-│  │  │  ┌─────────────┐  ┌─────────────┐                │    │   │
-│  │  │  │  Format     │  │ Hierarchy   │                │    │   │
-│  │  │  │  CodeGen    │  │  CodeGen    │                │    │   │
-│  │  │  └─────────────┘  └─────────────┘                │    │   │
-│  │  └──────────────────────┬───────────────────────────┘    │   │
-│  │                         │                                │   │
-│  │                         ▼                                │   │
-│  │                  [ R Code String ]                       │   │
+│  │                                             ▼            │   │
+│  │                                  [ R Code String ]       │   │
 │  │                                                          │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                 │
@@ -121,281 +86,126 @@ marp: false
 - Parameter validation (R-level)
 - Metadata extraction from data frames
 - `ksformat` package integration
-- Function registry management
 - Generated code execution
 
 **Key Functions**:
 
 ```r
-kst_compile(json_spec, metadata = NULL, optimize = TRUE)
-
+kst_compile(json_spec, metadata = NULL)
 ```
 
 - Validate JSON spec
 - Extract metadata if not provided
-- Call C++ compiler
+- Call R generator
 - Return R code string
 
 ```r
-kst_generate_table(json_spec, data, calc_functions, ...)
-
+kst_generate_table(json_spec, data, calc_functions, format_functions = list(), ...)
 ```
 
 - Extract metadata from data
 - Compile spec to R code
-- Register calculation functions
-- Execute generated code
+- Execute generated code with `calc_functions` and `format_functions`
 - Return formatted tibble
+
+**`calc_functions`**: named list; keys match `"fun"` values in JSON `statistics`.
+Functions receive a data vector and return raw numeric values or named lists.
+**No string coercion in calc functions.**
+
+**`format_functions`**: named list; keys match `"format.fun"` values in JSON.
+Functions receive a raw value (or named list) and return a single character string.
 
 ```r
 kst_validate_spec(json_spec)
-
 ```
 
 - Parse JSON
 - Validate against schema
-- Return validation result
+- Return list: `list(valid = TRUE/FALSE, errors = character)`
 
 ```r
 kst_extract_metadata(data, variables, use_ksformat = TRUE)
-
 ```
 
 - Query ksformat for format metadata
-- Extract factor levels
-- Compute distinct values
+- Extract factor levels (required for `.drop = FALSE` with `include_missing_levels`)
 - Return metadata list
 
 **Dependencies**:
 
-- dplyr, tidyr, rlang (for generated code environment)
-- ksformat (for format metadata)
-- jsonlite (for R-side JSON parsing)
-- Rcpp (for C++ integration)
+- dplyr, tidyr, rlang (generated code environment)
+- ksformat (format metadata)
+- jsonlite (JSON parsing)
 
 ---
 
-### 2. Rcpp Interface Layer
+### 2. R Generator
 
-**Location**: `src/rcpp_interface.cpp`, `src/RcppExports.cpp`
+**Location**: `R/compiler.R`
 
 **Responsibilities**:
 
-- Bridge between R and C++
-- Type conversion (R ↔ C++)
-- Error handling and exception translation
-- Memory management
+- Parse JSON DSL via `jsonlite::fromJSON()`
+- Validate spec (required fields, identifier safety)
+- Resolve metadata (factor levels, format names)
+- Emit pipe-based dplyr/tidyr R code string
 
-**Key Bindings**:
+**Internal pipeline**:
 
-```cpp
-// [[Rcpp::export]]
-Rcpp::String compile_spec_impl(
-    Rcpp::String json_spec,
-    Rcpp::List metadata,
-    bool optimize
+```text
+JSON string
+  ↓ jsonlite::fromJSON()
+R list (table spec)
+  ↓ validate required fields, assert_id() on all identifiers
+Validated spec
+  ↓ dispatch on layout$row_structure
+  ↓ for each parameter × statistic:
+      emit summarize chunk (.value_raw = calc_fns[[fun]](var))
+      emit format mutate  (.value = format_expr, .value_raw = NULL)
+  ↓ emit bind_rows + pivot_wider assembly
+R code string
+```
+
+**Compute / format separation**:
+
+Every generated chunk follows this two-step pattern:
+
+```r
+# Step 1 — compute: raw numeric or list preserved
+dplyr::summarize(
+  .value_raw = calc_fns[["stat_fun"]](VARIABLE),   # scalar → plain column
+  .groups    = "drop"
+) |>
+# Step 2 — format: convert to string, drop helper column
+dplyr::mutate(
+  .value     = <format_expression>,   # as.character() / sprintf() / vapply(format_fns...)
+  .value_raw = NULL                   # drop before bind_rows
 )
 ```
 
-```cpp
-// [[Rcpp::export]]
-Rcpp::List validate_json_impl(Rcpp::String json_spec)
-```
+This separation preserves raw values for potential sorting before formatting.
 
-**Type Conversions**:
+**Format expressions by format spec type**:
 
-- R character → std::string
-- R list → JSON object (via jsonlite)
-- C++ exceptions → R errors (via Rcpp::stop)
+| `format.type`  | Generated expression |
+|----------------|----------------------|
+| *(none)*       | `as.character(.value_raw)` |
+| `"sprintf"`    | `sprintf("<pattern>", .value_raw)` |
+| `"custom"`     | `vapply(.value_raw, format_fns[["<fun>"]], character(1L))` |
+| `"template"`   | `vapply(.value_raw, function(.x) glue::glue_data(.x, "<pattern>"), character(1L))` |
+| `"ksformat"`   | `ksformat::fput(.value_raw, "<format_name>")` |
 
----
+**Supported layouts**:
 
-### 3. C++ Compiler Core
+| `row_structure`  | Description |
+|------------------|-------------|
+| `parameter_stat` | Rows = parameter × statistic; columns = groups |
+| `hierarchical`   | Parent rows + child rows (e.g., SOC → PT); columns = groups |
 
-**Location**: `src/compiler/*.cpp`, `src/compiler/*.hpp`
+**Security** (SR-1): All JSON fields used in generated code are sanitized:
 
-#### 3.1 Parser Module
-
-**File**: `src/compiler/parser.cpp`
-
-**Responsibilities**:
-
-- Parse JSON string using Boost.JSON
-- Construct internal data structures
-- Handle encoding (UTF-8)
-
-**Data Structures**:
-
-```cpp
-struct TableSpec {
-    std::string schema_version;
-    std::string id;
-    std::string title;
-    std::string type;  // "summary" or "listing"
-    
-    std::map<std::string, Parameter> parameters;
-    std::map<std::string, Statistic> statistics;
-    GroupSpec groups;
-    LayoutSpec layout;
-};
-
-struct Parameter {
-    std::string name;
-    std::string variable;
-    std::string label;
-    std::optional<Parameter> nested;  // For hierarchical
-};
-
-struct Statistic {
-    std::string name;
-    std::string fun;
-    std::string label;
-    FormatSpec format;
-};
-
-struct GroupSpec {
-    std::vector<std::string> by;
-    bool include_missing_levels;
-    std::map<std::string, std::string> formats;  // var → ksformat name
-};
-```
-
-#### 3.2 Validator Module
-
-**File**: `src/compiler/validator.cpp`
-
-**Responsibilities**:
-
-- Schema validation
-- Reference validation (function names, format names)
-- Semantic validation (logical consistency)
-- Error message generation
-
-**Validation Rules**:
-
-- Required fields present
-- Types correct (string, bool, array, object)
-- Function references valid (if function registry provided)
-- Format references valid (if ksformat library provided)
-- No circular dependencies in nested parameters
-- Logical consistency (e.g., can't have both row_structure and column_structure)
-
-**Error Format**:
-
-```cpp
-struct ValidationError {
-    std::string path;      // JSON path (e.g., "/table_spec/statistics/n/fun")
-    std::string message;   // Error description
-    std::string suggestion; // How to fix (optional)
-};
-```
-
-#### 3.3 Metadata Consumer
-
-**File**: `src/compiler/metadata.cpp`
-
-**Responsibilities**:
-
-- Parse metadata JSON from R
-- Build metadata index for code generation
-- Resolve format specifications
-
-**Metadata Structure**:
-
-```cpp
-struct VariableMetadata {
-    std::string name;
-    std::string type;  // "numeric", "factor", "character", etc.
-    std::vector<std::string> levels;  // For factors
-    std::optional<std::string> format;  // ksformat name
-    std::vector<std::string> distinct_values;  // For non-factors
-};
-
-struct MetadataIndex {
-    std::map<std::string, VariableMetadata> variables;
-    
-    VariableMetadata get(const std::string& var) const;
-    bool has_format(const std::string& var) const;
-    std::vector<std::string> get_levels(const std::string& var) const;
-};
-```
-
-#### 3.4 AST Builder & Optimizer
-
-**File**: `src/compiler/ast.hpp`, `src/compiler/optimizer.cpp`
-
-**Responsibilities**:
-
-- Build Abstract Syntax Tree for R code
-- Optimize query plans
-- Eliminate redundant operations
-- Reorder operations for efficiency
-
-**AST Structure**:
-
-```cpp
-enum class NodeType {
-    Pipeline,      // %>% chain
-    GroupBy,       // group_by()
-    Summarize,     // summarize()
-    Mutate,        // mutate()
-    Filter,        // filter()
-    Arrange,       // arrange()
-    Pivot,         // pivot_wider/longer
-    Nest,          // nest()
-    Unnest,        // unnest()
-    FunctionCall   // user function call
-};
-
-struct ASTNode {
-    NodeType type;
-    std::vector<std::shared_ptr<ASTNode>> children;
-    std::map<std::string, std::string> params;
-    
-    std::string to_r_code() const;
-};
-
-struct Pipeline : ASTNode {
-    std::vector<std::shared_ptr<ASTNode>> operations;
-};
-```
-
-**Optimization Passes**:
-
-1. **Redundancy Elimination**: Remove duplicate group_by() calls
-2. **Operation Fusion**: Combine multiple mutate() into one
-3. **Predicate Pushdown**: Move filter() earlier in pipeline
-4. **Projection Pruning**: Only select() columns needed downstream
-
-#### 3.5 Code Generation Modules
-
-**Dplyr CodeGen** (`src/compiler/codegen_dplyr.cpp`):
-
-- Generate group_by() calls
-- Generate summarize() calls
-- Generate mutate() calls for transformations
-- Handle missing level inclusion
-
-**Tidyr CodeGen** (`src/compiler/codegen_tidyr.cpp`):
-
-- Generate pivot_wider() / pivot_longer() calls
-- Generate nest() / unnest() for hierarchical tables
-
-**Format CodeGen** (`src/compiler/format_gen.cpp`):
-
-- Generate ksformat::fput() calls
-- Generate sprintf() calls
-- Generate template string interpolation
-- Generate custom format function calls
-
-**Hierarchy CodeGen** (`src/compiler/hierarchy.cpp`):
-
-- Generate nested grouping code
-- Generate parent row deduplication
-- Generate indentation markers
-- Handle arbitrary nesting depth
-
-**Output**: R code string (UTF-8)
+- Identifiers (`variable`, `fun`, `by` items): validated with `^[A-Za-z.][A-Za-z0-9._]*$`
+- String literals (`label`, `pattern`): escaped (`\` → `\\`, `"` → `\"`)
 
 ---
 
@@ -404,21 +214,17 @@ struct Pipeline : ASTNode {
 ### Compilation Flow
 
 ```text
-JSON DSL
+JSON DSL (character string)
   ↓
-[Parser] → TableSpec object
+[jsonlite::fromJSON()] → R list
   ↓
-[Validator] → Validation result
+[Validator] → check required fields, identifier safety
   ↓
-[Metadata Consumer] → MetadataIndex
+[Metadata resolver] → factor levels, ksformat metadata
   ↓
-[AST Builder] → AST
+[Code Generator] → R code string (character(1))
   ↓
-[Optimizer] → Optimized AST
-  ↓
-[Code Generators] → R code string
-  ↓
-Return to R
+Return to caller
 ```
 
 ### Execution Flow
@@ -426,13 +232,16 @@ Return to R
 ```text
 R code string
   ↓
-[Create environment] → Include calc functions, data
+[Create eval environment]
+  env$.data       ← input data frame
+  env$calc_fns    ← calc_functions list (raw-value producers)
+  env$format_fns  ← format_functions list (string renderers)
   ↓
 [eval(parse(text = code), envir = env)]
   ↓
-[Execute dplyr pipeline]
+[dplyr pipeline: group_by → summarize → mutate → bind_rows → pivot_wider]
   ↓
-Formatted tibble
+Formatted tibble (all value columns are character)
   ↓
 Return to user
 ```
@@ -441,24 +250,7 @@ Return to user
 
 ## Memory Management
 
-### R Side
-
-- Standard R garbage collection
-- No manual memory management required
-- Rcpp handles SEXP ↔ C++ conversion
-
-### C++ Side
-
-- Modern C++23: use std::unique_ptr, std::shared_ptr
-- RAII for resource management
-- No raw pointers for owned memory
-- Boost.JSON manages JSON parse tree
-
-### Rcpp Bridge
-
-- Rcpp handles reference counting
-- Automatic conversion of C++ exceptions to R errors
-- Safe transfer of strings (uses UTF-8)
+All memory is managed by R's garbage collector. Code generation produces short-lived character vectors and lists, collected immediately after the code string is returned. No manual allocation or finalizers are required.
 
 ---
 
@@ -466,287 +258,146 @@ Return to user
 
 ### Error Categories
 
-1. **JSON Parse Errors**
-   - Syntax errors (malformed JSON)
-   - Encoding errors (non-UTF-8)
-   - **Handled by**: Parser module
-   - **Reported as**: R error with line/column number
+1. **JSON Parse Errors** — `jsonlite::fromJSON()` propagates as an R error with message and position.
 
-2. **Validation Errors**
-   - Schema violations (missing fields, wrong types)
-   - Reference errors (undefined functions/formats)
-   - Semantic errors (inconsistent specifications)
-   - **Handled by**: Validator module
-   - **Reported as**: R error with JSON path and suggestion
+2. **Validation Errors** — schema violations, unsafe identifiers, missing required fields. Reported as R errors with JSON path and suggestion.
 
-3. **Compilation Errors**
-   - Code generation failures
-   - Unsupported DSL features
-   - **Handled by**: Code generation modules
-   - **Reported as**: R error with context
-
-4. **Runtime Errors**
-   - Calculation function errors
-   - Data errors (missing variables, type mismatches)
-   - **Handled by**: Generated code (try-catch)
-   - **Reported as**: R error with stack trace
+3. **Runtime Errors** — wrong return type from a calc function, missing data columns, type mismatches. R's normal error propagation from inside `eval()`.
 
 ### Error Reporting Strategy
 
-**Principle**: Fail fast, provide context, suggest fixes
+**Principle**: fail fast, name the JSON path, suggest the fix.
 
-**Example Error Message**:
+**Example**:
 
 ```text
 Error in kst_compile():
-  Validation failed at /table_spec/statistics/n/fun:
-    Function 'count' is not registered.
+  Validation failed at /table_spec/statistics/mean_sd/fun:
+    'mean sd' is not a valid R identifier.
+    Function names must match ^[A-Za-z.][A-Za-z0-9._]*$.
     
-  Suggestion: Register the function using:
-    kst_register_calc("count", function(data) length(data))
-    
-  Or ensure the function name matches exactly (case-sensitive).
+  Suggestion: rename the key in calc_functions to 'mean_sd'.
 ```
 
 ---
 
 ## Performance Considerations
 
-### Compilation Performance
+### Compilation
 
-**Target**: < 1 second for simple tables, < 10 seconds for complex
+**Measured**: ~51–62 µs per call (demographics spec, 10,000 iterations, Apple Silicon).
 
-**Optimization Strategies**:
+The bottleneck is `jsonlite::fromJSON()`. String assembly for the R code output is sub-microsecond. No caching is planned for v1.0 — at < 100 µs the overhead is immaterial.
 
-1. **Parser**: Use Boost.JSON (fast C++ parser)
-2. **AST Building**: Use move semantics, avoid copies
-3. **Optimization**: Limit passes, use efficient data structures
-4. **Code Generation**: String building with fmt library (fast)
+### Runtime
 
-### Runtime Performance
+Generated code is equivalent to hand-written dplyr. Each statistic performs one `group_by |> summarize` pass; results are assembled with `bind_rows |> pivot_wider`. No redundant passes.
 
-**Target**: Generated code should be as efficient as hand-written dplyr
+### Memory
 
-**Optimization Strategies**:
+Only distinct values and factor levels are read from the data during metadata extraction. The data frame is passed by reference into the eval environment and processed in-place by dplyr.
 
-1. **Query Plan**: Optimize operation order (filter early, etc.)
-2. **Operation Fusion**: Combine operations to reduce passes
-3. **Memory**: Avoid unnecessary copies in generated code
-4. **Vectorization**: Use vectorized R operations
-
-### Memory Usage
-
-**Target**: < 100 MB peak for typical tables
-
-**Strategies**:
-
-1. **Metadata**: Don't load full data, only distinct values
-2. **AST**: Share subtrees with std::shared_ptr
-3. **Generated Code**: Stream output, don't build entire string in memory
-4. **R Execution**: Let R manage data frame memory
+**Target**: < 100 MB peak for typical clinical tables.
 
 ---
 
 ## Testing Strategy
 
-### Unit Tests
+### R Tests (testthat)
 
-**C++ Tests** (Catch2):
-
-- Parser: JSON parsing, edge cases
-- Validator: Schema validation, error messages
-- Code Generation: AST → R code correctness
-- Optimizer: Optimization passes preserve semantics
-
-**R Tests** (testthat):
-
-- Public API: All exported functions
-- Metadata extraction: ksformat integration, factor levels
-- Function registry: Registration, lookup
-- Integration: End-to-end compilation
+- **Compilation**: JSON → code string for each layout; verify generated code is syntactically valid
+- **Security**: injection attempts rejected for every identifier field
+- **Metadata**: ksformat integration, factor level extraction
+- **Execution**: end-to-end JSON → formatted tibble for each example table type
+- **Hierarchical**: parent/child row ordering, correct value assignment
 
 ### Integration Tests
 
-**Test Cases**:
+**Covered in v1.0**:
 
-- Simple demographics table
-- 2-way stratification
-- Hierarchical table (AE)
-- Efficacy table (change from baseline)
-- Lab shift table
-- Listing
+- Demographics table (`parameter_stat`, single group variable)
+- Demographics table (`parameter_stat`, 2-way stratification)
+- AE table (`hierarchical`, SOC → PT)
+- Efficacy table (`parameter_stat`, visit × treatment groups)
 
 **Verification**:
 
 - Generated code is valid R
-- Generated code produces expected output
-- Output structure matches specification
-- All values are formatted strings
-- ksTFL integration works
-
-### Performance Tests
-
-**Benchmarks**:
-
-- Compilation time for various table sizes
-- Memory usage during compilation
-- Execution time of generated code
-- Comparison with hand-written dplyr code
+- Output matches expected values on known synthetic data
+- All value columns are `character` type
+- ksTFL `create_table()` accepts output without modification
 
 ---
 
 ## Build System
 
-### R Package Build
+**Tools**: standard R package tools — `devtools`, `roxygen2`, `testthat`.
 
-**Tools**: standard R package tools, devtools, Rcpp
+**No compiled code.** Pure R package. No `src/` directory, no `Makevars`, no `SystemRequirements`.
 
-**Process**:
-
-1. Rcpp compiles C++ code
-2. Generates RcppExports.R and RcppExports.cpp
-3. Links against Boost libraries
-4. Creates package binary
-
-**Configuration**:
-
-`src/Makevars`:
-
-```makefile
-CXX_STD = CXX23
-PKG_CXXFLAGS = -I../inst/include
-PKG_LIBS = -lboost_json -lfmt
-```
-
-`DESCRIPTION`:
+**DESCRIPTION** (key fields):
 
 ```text
-SystemRequirements: C++23, Boost (>= 1.80), fmt (>= 10.0)
+Depends: R (>= 4.1.0)
+Imports:
+    dplyr (>= 1.1.0),
+    tidyr (>= 1.3.0),
+    rlang (>= 1.1.0),
+    jsonlite (>= 1.8.0),
+    ksformat (>= 0.7.0)
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
 ```
-
-### C++ Dependencies
-
-**Boost.JSON**: Header-only (mostly), link if needed  
-**fmt**: Header-only or link library  
-**range-v3**: Header-only  
-
-**Installation**:
-
-- Linux: apt/yum package managers
-- macOS: Homebrew (`brew install boost fmt`)
-- Windows: vcpkg or pre-built binaries
-
----
-
-## Extension Points
-
-### Custom Code Generators
-
-**Interface**:
-
-```cpp
-class CodeGenerator {
-public:
-    virtual ~CodeGenerator() = default;
-    virtual std::string generate(const ASTNode& node) const = 0;
-};
-```
-
-Users can implement custom generators and register them.
-
-### Custom Format Handlers
-
-**Interface**:
-
-```cpp
-class FormatHandler {
-public:
-    virtual ~FormatHandler() = default;
-    virtual std::string generate_format_code(
-        const FormatSpec& spec,
-        const std::string& value_expr
-    ) const = 0;
-};
-```
-
-Allows custom formatting logic beyond ksformat/sprintf/templates.
-
-### Custom Optimization Passes
-
-**Interface**:
-
-```cpp
-class OptimizationPass {
-public:
-    virtual ~OptimizationPass() = default;
-    virtual void optimize(ASTNode& root) const = 0;
-};
-```
-
-Users can add domain-specific optimizations.
 
 ---
 
 ## Security Considerations
 
-### Code Injection
+### Code Injection (SR-1)
 
-**Risk**: JSON DSL contains malicious R code strings
+**Risk**: A JSON field value interpolated into generated R code contains R operators, function calls, or metacharacters that alter execution.
 
-**Mitigation**:
+**Attack surface** (all fields that appear in generated code):
 
-- DSL is declarative, not imperative
-- No direct R code execution from JSON
-- Function references only (not inline code)
-- Function registry is explicit (user provides functions)
+| Field | Used as | Mitigation |
+|-------|---------|------------|
+| `parameter[].variable` | bare R symbol in `summarize()` | `assert_id()` |
+| `statistics[].fun` | `calc_fns[["..."]]` key | `assert_id()` |
+| `statistics[].format.fun` | `format_fns[["..."]]` key | `assert_id()` |
+| `groups[].by[]` | bare R symbol in `group_by()` | `assert_id()` |
+| `label`, `pattern` | R string literal in `mutate()` | `r_str()` escape |
 
-### Function Registry
+**`assert_id(x)`**: rejects anything not matching `^[A-Za-z.][A-Za-z0-9._]*$`.
+**`r_str(x)`**: escapes `\` and `"` before embedding in double-quoted R strings.
 
-**Risk**: Malicious functions in registry
-
-**Mitigation**:
-
-- User explicitly registers functions
-- No automatic discovery of functions
-- Functions run in user's R session (same security context)
-
-### File System Access
-
-**Risk**: JSON file path traversal
-
-**Mitigation**:
-
-- JSON content is string, not file paths
-- R handles file I/O, not C++ code
-- Standard R security applies
+Both functions are implemented in `R/compiler.R` and applied to every field before any code is emitted.
 
 ---
 
 ## Future Enhancements
 
-### Phase 2 Features
+### v1.1
 
-- Multi-parameter tables (multiple variables in same table)
-- Cross-tabulation support
-- Conditional formatting (highlighting, colors)
-- Page breaks and continuation headers
-- Cell-level annotations (footnote markers)
+- `shift_matrix` row structure (cross-tabulation of two categorical variables)
+- `listing` table type (unaggregated subject-level rows)
+- Hierarchical nesting depth > 2
+- Sort-before-format step (sort on `.value_raw`, then format)
 
-### Phase 3 Features
+### v2.0
 
 - Interactive DSL builder (Shiny app)
-- Template library (common table patterns)
-- DSL macro system (reusable components)
-- Code generation to other backends (data.table, SQL)
-
-### Performance Enhancements
-
-- Compiled code caching (hash-based)
-- Lazy evaluation of calculations
+- Template library (common clinical table patterns)
+- DSL macro system (reusable spec components)
+- Compiled code caching (hash-based invalidation)
 - Parallel execution of independent groups
-- Streaming for large datasets
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2026-07-01
+**Document Version**: 2.0  
+**Last Updated**: 2026-07-05
+
+
+
+

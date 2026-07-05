@@ -441,7 +441,7 @@ Subject ID    Age    Sex       Race               Ethnicity              Treatme
 
 ```json
 "layout": {
-  "row_structure": "parameter_stat" | "groups_stat" | "hierarchical" | "shift_matrix",
+  "row_structure": "parameter_stat" | "hierarchical",
   "column_structure": "groups" | "parameter",
   "group_headers": ["VAR1", "VAR2"],
   "sort": {
@@ -449,6 +449,8 @@ Subject ID    Age    Sex       Race               Ethnicity              Treatme
   }
 }
 ```
+
+> **Note**: Visual formatting (indentation of child rows, colors, column widths) is handled by ksTFL, not ksTable. ksTable outputs plain tibbles.
 
 ### Format Specifications
 
@@ -493,40 +495,61 @@ Subject ID    Age    Sex       Race               Ethnicity              Treatme
 
 ## Calculation Function Examples
 
-These functions would be provided by the user:
+ksTable uses **two distinct function types** passed as named lists.
+
+### `calc_functions` — return raw values (no string formatting)
+
+Keys match the `"fun"` field in JSON `statistics`.
 
 ```r
-# Count non-missing values
-count <- function(data) {
-  sum(!is.na(data))
-}
+# Count non-missing values → integer
+count <- function(data) sum(!is.na(data))
 
-# Mean and SD
-mean_sd <- function(data) {
-  m <- mean(data, na.rm = TRUE)
-  s <- sd(data, na.rm = TRUE)
-  list(mean = m, sd = s)
-}
+# Mean and SD → named list (for template/custom format)
+mean_sd <- function(data) list(
+  mean = mean(data, na.rm = TRUE),
+  sd   = sd(data,   na.rm = TRUE)
+)
 
-# Count and percentage
-count_pct <- function(data) {
-  n <- length(data)
-  total <- attr(data, "total")  # Set by compiler
-  pct <- 100 * n / total
-  list(n = n, pct = pct)
-}
+# Count and percentage → named list
+# Denominator handling is the user's responsibility
+count_pct <- function(data) list(
+  n   = length(data),
+  pct = 100 * length(data) / attr(data, "N")  # user sets N via their data prep
+)
 
-# Median and range
-median_range <- function(data) {
-  med <- median(data, na.rm = TRUE)
-  rng <- range(data, na.rm = TRUE)
-  list(median = med, min = rng[1], max = rng[2])
-}
+# Median and range → named list
+median_range <- function(data) list(
+  median = median(data, na.rm = TRUE),
+  min    = min(data,    na.rm = TRUE),
+  max    = max(data,    na.rm = TRUE)
+)
+```
 
-# Custom format function
-format_median_range <- function(median, min, max) {
-  sprintf("%.1f [%.1f, %.1f]", median, min, max)
-}
+### `format_functions` — convert raw value to display string
+
+Keys match the `"format.fun"` field in JSON `statistics.format`.
+
+```r
+# Receives list(mean, sd) from mean_sd() → "45.2 (12.34)"
+format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
+
+# Receives list(n, pct) from count_pct() → "160 (75.5)"
+format_n_pct <- function(x) sprintf("%d (%.1f)", x$n, x$pct)
+
+# Receives list(median, min, max) from median_range() → "45.0 [18.0, 78.0]"
+format_median_range <- function(x) sprintf("%.1f [%.1f, %.1f]", x$median, x$min, x$max)
+```
+
+### Wiring them together
+
+```r
+result <- kst_generate_table(
+  json_spec        = spec,
+  data             = adsl,
+  calc_functions   = list(count = count, mean_sd = mean_sd, count_pct = count_pct),
+  format_functions = list(format_mean_sd = format_mean_sd, format_n_pct = format_n_pct)
+)
 ```
 
 ---
@@ -558,5 +581,5 @@ format_median_range <- function(median, min, max) {
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2026-07-01
+**Document Version**: 2.0  
+**Last Updated**: 2026-07-05
