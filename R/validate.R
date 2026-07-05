@@ -181,12 +181,12 @@ validate_structure_manual <- function(json_spec) {
     }
   }
 
-  # parameter: variable required
+  # parameter: variable required (use [[]] to avoid $-partial-matching variable -> variables)
   for (pn in names(ts$parameter)) {
     p <- ts$parameter[[pn]]
-    if (is.null(p$variable))
+    if (is.null(p[["variable"]]) && is.null(p[["variables"]]))
       errors <- c(errors, sprintf(
-        "Missing required field: /table_spec/parameter/%s/variable", pn))
+        "Missing required field: /table_spec/parameter/%s/variable or /variables", pn))
     if (!is.null(p$nested))
       for (cn in names(p$nested))
         if (is.null(p$nested[[cn]]$variable))
@@ -208,11 +208,15 @@ validate_identifiers <- function(ts) {
 
   if (is.null(ts)) return(errors)
 
-  # parameter variables
+  # parameter variables (use [[]] to avoid $-partial-matching variable -> variables)
   for (pn in names(ts$parameter)) {
     p <- ts$parameter[[pn]]
-    if (!is.null(p$variable))
-      safe(p$variable, paste0("parameter.", pn, ".variable"))
+    if (!is.null(p[["variable"]]))
+      safe(p[["variable"]], paste0("parameter.", pn, ".variable"))
+    # validate each entry in the variables array
+    if (!is.null(p[["variables"]]))
+      for (vv in p[["variables"]])
+        safe(vv, paste0("parameter.", pn, ".variables[]"))
     if (!is.null(p$nested))
       for (cn in names(p$nested))
         if (!is.null(p$nested[[cn]]$variable))

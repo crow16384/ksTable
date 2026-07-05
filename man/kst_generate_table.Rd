@@ -4,7 +4,13 @@
 \alias{kst_generate_table}
 \title{Generate a formatted table from a JSON DSL spec and a data frame}
 \usage{
-kst_generate_table(json_spec, data, metadata = NULL, envir = parent.frame())
+kst_generate_table(
+  json_spec,
+  data,
+  metadata = NULL,
+  denominator = NULL,
+  envir = parent.frame()
+)
 }
 \arguments{
 \item{json_spec}{JSON string or path to a \code{.json} file.}
@@ -13,6 +19,18 @@ kst_generate_table(json_spec, data, metadata = NULL, envir = parent.frame())
 referenced in the spec as \code{variable} and \code{by}.}
 
 \item{metadata}{Optional metadata list from \code{\link{kst_extract_metadata}}.}
+
+\item{denominator}{Optional named list or data frame made available as
+\code{denominator} in the evaluation environment.  Calc functions can
+look up arm-level denominators using \code{dplyr::cur_group()} to obtain
+the current grouping key:
+\preformatted{
+n_pct <- function(data) {
+  arm <- as.list(dplyr::cur_group())$TRT01P
+  N   <- denominator$N[denominator$TRT01P == arm]
+  list(n = length(unique(data)), pct = 100 * length(unique(data)) / N)
+}
+}}
 
 \item{envir}{Environment used to resolve calc / format functions.
 Defaults to the caller's frame so that any locally-defined

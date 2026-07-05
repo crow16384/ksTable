@@ -100,40 +100,58 @@ gen_parameter_stat <- function(ts) {
 
   for (pn in names(params)) {
     p   <- params[[pn]]
-    var <- assert_id(p$variable, paste0("parameter.", pn, ".variable"))
-    lbl <- r_str(p$label %||% var)
 
-    for (sn in names(stats)) {
-      s    <- stats[[sn]]
-      fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
-      slbl <- r_str(s$label %||% sn)
+    # Support "variables" (array) as well as the legacy "variable" (scalar).
+    # When an array is given each element expands into its own row block,
+    # using the corresponding "labels" entry (or the variable name itself).
+    # Use [[]] for field access to prevent $-partial-matching of "variable" -> "variables".
+    vars_raw   <- p[["variables"]] %||% list(p[["variable"]])
+    # Each variable's label defaults to its own name if neither label nor labels is given
+    labels_raw <- p[["labels"]] %||% lapply(vars_raw, function(v) p[["label"]] %||% v)
 
-      extra    <- format_args(s$args)
-      raw_expr <- if (needs_list_wrap(s$format)) {
-        paste0("list(", fun, "(", var, extra, "))")    # list-column for named-list returns
-      } else {
-        paste0(fun, "(", var, extra, ")")              # scalar: integer, double, or character
-      }
-      fmt_expr <- gen_format_expr(s)
+    for (vi in seq_along(vars_raw)) {
+      var <- assert_id(vars_raw[[vi]],  paste0("parameter.", pn, ".variable"))
+      lbl <- r_str(labels_raw[[vi]] %||% var)
 
-      lines <- c(lines,
-        paste0(".chunks[[", idx, "L]] <- data |>"),
-        gen_group_by(gvars, drop = !inc_miss),
-        "  dplyr::summarize(",
-        paste0("    .value_raw  = ", raw_expr, ","),
-        '    .groups     = "drop"',
-        "  ) |>",
-        "  dplyr::mutate(",
-        paste0("    .value      = ", fmt_expr, ","),
-        paste0("    .param      = ", lbl, ","),
-        paste0("    .stat_label = ", slbl, ","),
-        "    .value_raw  = NULL",
+      for (sn in names(stats)) {
+        s <- stats[[sn]]
+
+        # apply_to: if present, skip this stat for parameters not listed.
+        # Accepts parameter IDs OR variable names so either convention works.
+        apply_to <- unlist(s$apply_to)
+        if (!is.null(apply_to) && length(apply_to) > 0L &&
+            !pn %in% apply_to && !vars_raw[[vi]] %in% apply_to) next
+
+        fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
+        slbl <- r_str(s$label %||% sn)
+
+        extra    <- format_args(s$args)
+        raw_expr <- if (needs_list_wrap(s$format)) {
+          paste0("list(", fun, "(", var, extra, "))")
+        } else {
+          paste0(fun, "(", var, extra, ")")
+        }
+        fmt_expr <- gen_format_expr(s)
+
+        lines <- c(lines,
+          paste0(".chunks[[", idx, "L]] <- data |>"),
+          gen_group_by(gvars, drop = !inc_miss),
+          "  dplyr::summarize(",
+          paste0("    .value_raw  = ", raw_expr, ","),
+          '    .groups     = "drop"',
+          "  ) |>",
+          "  dplyr::mutate(",
+          paste0("    .value      = ", fmt_expr, ","),
+          paste0("    .param      = ", lbl, ","),
+          paste0("    .stat_label = ", slbl, ","),
+          "    .value_raw  = NULL",
         "  )",
         ""
       )
       idx <- idx + 1L
-    }
-  }
+      }  # sn
+    }  # vi
+  }  # pn
 
   c(lines,
     ".long <- dplyr::bind_rows(.chunks)",

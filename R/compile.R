@@ -54,6 +54,17 @@ kst_compile <- function(json_spec, metadata = NULL) {
 #' @param data       Input data frame / tibble. Must contain all column names
 #'                   referenced in the spec as \code{variable} and \code{by}.
 #' @param metadata   Optional metadata list from \code{\link{kst_extract_metadata}}.
+#' @param denominator Optional named list or data frame made available as
+#'   \code{denominator} in the evaluation environment.  Calc functions can
+#'   look up arm-level denominators using \code{dplyr::cur_group()} to obtain
+#'   the current grouping key:
+#'   \preformatted{
+#'   n_pct <- function(data) {
+#'     arm <- as.list(dplyr::cur_group())$TRT01P
+#'     N   <- denominator$N[denominator$TRT01P == arm]
+#'     list(n = length(unique(data)), pct = 100 * length(unique(data)) / N)
+#'   }
+#'   }
 #' @param envir      Environment used to resolve calc / format functions.
 #'                   Defaults to the caller's frame so that any locally-defined
 #'                   functions are visible without explicit passing.
@@ -78,6 +89,7 @@ kst_compile <- function(json_spec, metadata = NULL) {
 #'
 #' @export
 kst_generate_table <- function(json_spec, data, metadata = NULL,
+                               denominator = NULL,
                                envir = parent.frame()) {
   raw_json <- read_json_spec(json_spec)
   ts       <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)$table_spec
@@ -100,6 +112,7 @@ kst_generate_table <- function(json_spec, data, metadata = NULL,
   code     <- compile_ts(ts)
   env      <- new.env(parent = envir)
   env$data <- data
+  if (!is.null(denominator)) env$denominator <- denominator
   eval(parse(text = code), envir = env)
 }
 

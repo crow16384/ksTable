@@ -1,12 +1,11 @@
 ### ksTable demo: ksformat Integration
 ###
-### One JSON spec covering Age (years), BMI, and Sex in a demographics table.
-### ksformat is used for:
+### Demographics table: Age, BMI (continuous) and Sex (categorical) in ONE
+### JSON spec using three new DSL features:
 ###
-###  1. Treatment arm column headers  -- "PBO" -> "Placebo" etc.
-###  2. include_missing_levels        -- absent arm still gets a column
-###  3. SEX pre-formatted upstream    -- fput() applied before generating code
-###     so cat_summary() receives "Male"/"Female"/"Unknown" directly
+###  1. apply_to  -- bind each statistic to specific parameter IDs (no blanks)
+###  2. variables -- array of columns sharing the same statistics (no repetition)
+###  3. denominator -- external N tibble accessed via dplyr::cur_group()
 ###
 ### Requires: remotes::install_github("crow16384/ksformat")
 
@@ -22,15 +21,12 @@ library(ksformat)
 
 fnew("PBO"  = "Placebo",
      "D50"  = "Drug A 50 mg",
-     "D100" = "Drug A 100 mg",   # registered but absent from data (missing level demo)
+     "D100" = "Drug A 100 mg",   # registered but absent from data
      name   = "trt_fmt")
 
 fnew("M" = "Male", "F" = "Female", .missing = "Unknown", name = "sex_fmt")
 
 ## -- 2. Synthetic ADSL -------------------------------------------------------
-##
-## Two arms only (PBO, D50); D100 is absent to exercise include_missing_levels.
-## Ten SEX values are set to NA to demonstrate the .missing = "Unknown" label.
 
 set.seed(42L)
 n    <- 240L
@@ -43,60 +39,51 @@ adsl <- data.frame(
   stringsAsFactors = FALSE
 )
 adsl$SEX[sample(n, 10L)] <- NA    # 10 subjects with missing sex
-cat("Raw SEX values:  ", paste(sort(unique(adsl$SEX), na.last = TRUE), collapse = ", "), "\n")
+
+## Apply ksformat to TRT01P and SEX; sets factor levels (incl. D100 arm)
+meta     <- kst_extract_metadata(adsl, c("TRT01P", "SEX"),
+                                  format_map = list(TRT01P = "trt_fmt",
+                                                    SEX    = "sex_fmt"))
+adsl_fmt <- kst_apply_metadata(adsl, meta)
+
+cat("TRT01P levels:", paste(levels(adsl_fmt$TRT01P), collapse = " | "), "\n")
+cat("SEX values:   ", paste(sort(unique(adsl_fmt$SEX), na.last = TRUE), collapse = ", "), "\n\n")
 
 ## -- 3. Calc and format functions --------------------------------------------
-##
-## Because ONE spec covers both numeric (AGE, BMIBL) and categorical (SEX)
-## parameters, every calc function must handle either type gracefully:
-##   - Numeric stats return NA / NULL for character columns (shown as "")
-##   - The categorical summary returns NULL for numeric columns (shown as "")
 
-## Continuous stats -- safe versions that return NA for character input
-mean_sd <- function(data) {
-  if (!is.numeric(data)) return(list(mean = NA_real_, sd = NA_real_))
-  list(mean = mean(data, na.rm = TRUE), sd = sd(data, na.rm = TRUE))
-}
-format_mean_sd <- function(x) {
-  if (is.na(x$mean)) return("")
-  sprintf("%.1f (%.2f)", x$mean, x$sd)
-}
-
-median_safe <- function(data) {
-  if (!is.numeric(data)) return(NA_real_)
-  median(data, na.rm = TRUE)
-}
+## Continuous
+mean_sd <- function(data) list(mean = mean(data, na.rm = TRUE),
+                               sd   = sd(data,   na.rm = TRUE))
+format_mean_sd      <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 format_num_or_blank <- function(x) if (is.na(x) || is.infinite(x)) "" else sprintf("%.1f", x)
+median_safe <- function(data) if (!is.numeric(data)) NA_real_ else median(data, na.rm = TRUE)
+min_safe    <- function(data) if (!is.numeric(data)) NA_real_ else min(data, na.rm = TRUE)
+max_safe    <- function(data) if (!is.numeric(data)) NA_real_ else max(data, na.rm = TRUE)
 
-min_safe <- function(data) { if (!is.numeric(data)) NA_real_ else min(data, na.rm = TRUE) }
-max_safe <- function(data) { if (!is.numeric(data)) NA_real_ else max(data, na.rm = TRUE) }
-
-## Categorical summary -- uses dplyr::count() internally.
-##
-## SEX is pre-formatted upstream by kst_apply_metadata() (see step 3 below),
-## so this function receives display labels ("Male", "Female", "Unknown")
-## directly -- no ksformat translation needed here.
-## NA values should not reach this function if .missing is set in the format;
-## any remaining NA is counted separately as a safeguard.
-
+## Categorical (SEX already formatted upstream; no ksformat call here)
 cat_summary <- function(data) {
   if (is.numeric(data)) return(NULL)
-  data.frame(x = data) |>                    # include all values; NA from .missing
+  data.frame(x = data) |>
     dplyr::count(x, sort = FALSE, name = "n") |>
     dplyr::mutate(pct = 100 * n / sum(n))
 }
-
 format_sex_counts <- function(x) {
   if (is.null(x)) return("")
-  # Labels already translated upstream; just render counts and percentages.
   paste(sprintf("%s: %d (%.1f%%)", x$x, x$n, x$pct), collapse = "; ")
 }
 
-## -- 4. One JSON spec: AGE + BMI + SEX ----------------------------------------
+## -- 4. JSON spec: apply_to + variables --------------------------------------
 ##
-## The spec does NOT need a format reference for SEX; the column is already
-## pre-formatted.  cat_summary() + format_sex_counts() are pure data functions.
-## groups.format for TRT01P drives the auto-pipeline in kst_generate_table().
+## FEATURE 1 — apply_to:
+##   Binds each statistic to specific parameter IDs, eliminating blank cells.
+##   "n" has no apply_to -> runs for both "cont" and "sex" parameters.
+##   "mean_sd", "median", "min", "max" use apply_to: ["cont"]
+##   "sex_summary" uses apply_to: ["sex"]
+##
+## FEATURE 2 — variables (array):
+##   The "cont" parameter lists two variables: AGE and BMIBL.
+##   Both share the same statistics; each expands into its own row block.
+##   No need to write separate "age" and "bmi" parameter definitions.
 
 demographics_spec <- '{
   "schema_version": "1.0",
@@ -104,13 +91,9 @@ demographics_spec <- '{
     "id":    "demographics",
     "title": "Baseline Demographic Characteristics",
     "parameter": {
-      "age": {
-        "variable": "AGE",
-        "label":    "Age (years)"
-      },
-      "bmi": {
-        "variable": "BMIBL",
-        "label":    "BMI at Baseline (kg/m2)"
+      "cont": {
+        "variables": ["AGE",          "BMIBL"],
+        "labels":    ["Age (years)",  "BMI at Baseline (kg/m2)"]
       },
       "sex": {
         "variable": "SEX",
@@ -123,29 +106,34 @@ demographics_spec <- '{
         "label": "N"
       },
       "mean_sd": {
-        "fun":    "mean_sd",
-        "label":  "Mean (SD)",
-        "format": { "type": "custom", "fun": "format_mean_sd" }
+        "fun":      "mean_sd",
+        "label":    "Mean (SD)",
+        "apply_to": ["cont"],
+        "format":   { "type": "custom", "fun": "format_mean_sd" }
       },
       "median": {
-        "fun":    "median_safe",
-        "label":  "Median",
-        "format": { "type": "custom", "fun": "format_num_or_blank" }
+        "fun":      "median_safe",
+        "label":    "Median",
+        "apply_to": ["cont"],
+        "format":   { "type": "custom", "fun": "format_num_or_blank" }
       },
       "min": {
-        "fun":    "min_safe",
-        "label":  "Min",
-        "format": { "type": "custom", "fun": "format_num_or_blank" }
+        "fun":      "min_safe",
+        "label":    "Min",
+        "apply_to": ["cont"],
+        "format":   { "type": "custom", "fun": "format_num_or_blank" }
       },
       "max": {
-        "fun":    "max_safe",
-        "label":  "Max",
-        "format": { "type": "custom", "fun": "format_num_or_blank" }
+        "fun":      "max_safe",
+        "label":    "Max",
+        "apply_to": ["cont"],
+        "format":   { "type": "custom", "fun": "format_num_or_blank" }
       },
       "sex_summary": {
-        "fun":    "cat_summary",
-        "label":  "n (%)",
-        "format": { "type": "custom", "fun": "format_sex_counts" }
+        "fun":      "cat_summary",
+        "label":    "n (%)",
+        "apply_to": ["sex"],
+        "format":   { "type": "custom", "fun": "format_sex_counts" }
       }
     },
     "groups": {
@@ -160,60 +148,79 @@ demographics_spec <- '{
   }
 }'
 
-## -- 5. Validate the spec ----------------------------------------------------
+## -- 5. Validate -------------------------------------------------------------
 
 v <- kst_validate_spec(demographics_spec)
 if (!v$valid) stop(paste(v$errors, collapse = "\n"))
-cat("Spec validation:", v$engine, "-> PASS\n\n")
+cat("Spec validation: PASS\n\n")
 
-## -- 6. Pre-process: apply formats to TRT01P AND SEX -------------------------
+## -- 6. FEATURE 3: denominator from an external tibble ----------------------
 ##
-## kst_extract_metadata() with format_map for both variables:
-##   TRT01P: codes "PBO"/"D50"/"D100" -> labels; factor levels include absent D100
-##   SEX:    codes "M"/"F" -> "Male"/"Female"; NA -> "Unknown" (.missing label)
+## When computing AE percentages, the denominator is the number of subjects
+## per arm (from ADSL), NOT the number of events in the AE group.
 ##
-## After kst_apply_metadata(), generated code receives already-labelled values:
-##   cat_summary(SEX) sees "Male", "Female", "Unknown" -- no ksformat call needed.
-
-meta <- kst_extract_metadata(
-  adsl,
-  variables  = c("TRT01P", "SEX"),
-  format_map = list(TRT01P = "trt_fmt", SEX = "sex_fmt")
-)
-adsl_fmt <- kst_apply_metadata(adsl, meta)
-
-cat("SEX after fput():  ", paste(sort(unique(adsl_fmt$SEX), na.last = TRUE), collapse = ", "), "\n")
-cat("TRT01P levels:     ", paste(levels(adsl_fmt$TRT01P), collapse = " | "), "\n\n")
-
-## -- 7. Generate the table ---------------------------------------------------
+## kst_generate_table(denominator = ...) binds the tibble into the eval env
+## as `denominator`.  Calc functions read it using dplyr::cur_group() to
+## get the current arm key:
 ##
-## kst_generate_table() still auto-runs the TRT01P metadata pipeline because
-## groups.format is present in the spec.  The pipeline is idempotent: fput() on
-## already-formatted labels ("Placebo") returns them unchanged.
-## The SEX column is NOT in groups.format, so its pre-processing is ours alone.
+##   n_pct_ae <- function(data) {
+##     arm <- as.list(dplyr::cur_group())$TRT01P
+##     N   <- denominator$N[denominator$TRT01P == arm]
+##     list(n = length(unique(data)), pct = 100 * length(unique(data)) / N)
+##   }
+##
+## For this demo we compute sex % relative to arm N from ADSL (not the SEX
+## column itself), to illustrate the pattern.
 
-cat("-- Generated script (first 20 lines) ------------------------------------\n")
-code <- kst_compile(demographics_spec)
-cat(paste(head(strsplit(code, "\n")[[1L]], 20L), collapse = "\n"), "\n...\n\n")
+n_by_arm <- adsl_fmt |>
+  dplyr::count(TRT01P, name = "N") |>
+  dplyr::filter(!is.na(TRT01P))
 
-cat("-- Demographics Table ---------------------------------------------------\n")
+cat("External denominator (arm N from ADSL):\n")
+print(n_by_arm)
+cat("\n")
+
+sex_pct_ext <- function(data) {
+  if (is.numeric(data)) return(NULL)
+  arm <- as.list(dplyr::cur_group())$TRT01P
+  N   <- denominator$N[denominator$TRT01P == arm]   # reads from eval env
+  if (length(N) == 0L || is.na(N)) N <- 1L
+  data.frame(x = data) |>
+    dplyr::count(x, sort = FALSE, name = "n") |>
+    dplyr::mutate(pct = 100 * n / N)
+}
+format_sex_ext <- function(x) {
+  if (is.null(x)) return("")
+  paste(sprintf("%s: %d / N=%.1f%%", x$x, x$n, x$pct), collapse = "; ")
+}
+
+spec_ext <- gsub('"fun":      "cat_summary"',  '"fun": "sex_pct_ext"',
+             gsub('"fun": "format_sex_counts"', '"fun": "format_sex_ext"',
+                  demographics_spec))
+
+## -- 7. Generate tables ------------------------------------------------------
+
+cat("-- Demographics Table (apply_to + variables) ---------------------------\n")
 result <- kst_generate_table(demographics_spec, adsl_fmt)
 print(result, n = Inf, width = 140)
 
-## -- 8. Inspect sex rows only -----------------------------------------------
+cat("\n-- Sex rows with external denominator from n_by_arm --------------------\n")
+result_ext <- kst_generate_table(spec_ext, adsl_fmt, denominator = n_by_arm)
+print(result_ext[result_ext$.param == "Sex", ], width = 140)
 
-cat("\n-- Sex rows (Unknown appears because .missing = 'Unknown') --------------\n")
-print(result[result$.param == "Sex", ], width = 140)
+## -- 8. Inspect generated script (apply_to effect visible in chunk count) ---
 
-## -- 9. Save the script to a file -------------------------------------------
+cat("\n-- Generated script: only 7 chunks (n×2 + mean_sd×2+median×2+min×2+max×2 + sex_summary×1)\n")
+code <- kst_compile(demographics_spec)
+n_chunks <- lengths(regmatches(code, gregexpr(".chunks[[", code, fixed = TRUE)))
+cat("   Chunk count:", n_chunks, "\n\n")
+cat(code)
+
+## -- 9. Save and clean up ----------------------------------------------------
 
 tmp <- tempfile(fileext = ".R")
 kst_save(demographics_spec, tmp)
 cat("\n-- Saved script header -------------------------------------------------\n")
 cat(paste(head(readLines(tmp), 10L), collapse = "\n"), "\n")
 
-## -- 10. Clean up the global format library ----------------------------------
-
 fclear()
-cat("\nFormats after fclear(): ")
-fprint()
