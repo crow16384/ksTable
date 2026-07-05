@@ -5,7 +5,8 @@
 ###
 ###  1. Treatment arm column headers  -- "PBO" -> "Placebo" etc.
 ###  2. include_missing_levels        -- absent arm still gets a column
-###  3. Sex cell formatting           -- modal sex code "M"/"F" -> "Male"/"Female"
+###  3. SEX pre-formatted upstream    -- fput() applied before generating code
+###     so cat_summary() receives "Male"/"Female"/"Unknown" directly
 ###
 ### Requires: remotes::install_github("crow16384/ksformat")
 
@@ -29,6 +30,7 @@ fnew("M" = "Male", "F" = "Female", .missing = "Unknown", name = "sex_fmt")
 ## -- 2. Synthetic ADSL -------------------------------------------------------
 ##
 ## Two arms only (PBO, D50); D100 is absent to exercise include_missing_levels.
+## Ten SEX values are set to NA to demonstrate the .missing = "Unknown" label.
 
 set.seed(42L)
 n    <- 240L
@@ -40,6 +42,8 @@ adsl <- data.frame(
   SEX     = sample(c("M", "F"), n, replace = TRUE, prob = c(0.55, 0.45)),
   stringsAsFactors = FALSE
 )
+adsl$SEX[sample(n, 10L)] <- NA    # 10 subjects with missing sex
+cat("Raw SEX values:  ", paste(sort(unique(adsl$SEX), na.last = TRUE), collapse = ", "), "\n")
 
 ## -- 3. Calc and format functions --------------------------------------------
 ##
@@ -67,46 +71,32 @@ format_num_or_blank <- function(x) if (is.na(x) || is.infinite(x)) "" else sprin
 min_safe <- function(data) { if (!is.numeric(data)) NA_real_ else min(data, na.rm = TRUE) }
 max_safe <- function(data) { if (!is.numeric(data)) NA_real_ else max(data, na.rm = TRUE) }
 
-## Categorical summary -- replaces separate n_male / n_female / mode_sex.
+## Categorical summary -- uses dplyr::count() internally.
 ##
-## cat_summary() uses dplyr internally to count each category value and
-## compute its within-group percentage.  Returns a data frame (tibble);
-## returns NULL for numeric columns so the format step shows "".
-##
-## format_sex_counts() renders the tibble as a single display string and
-## applies ksformat to translate raw codes ("M", "F") to labels
-## ("Male", "Female") -- so the ksformat integration is inside the
-## format function rather than in a separate format spec.
+## SEX is pre-formatted upstream by kst_apply_metadata() (see step 3 below),
+## so this function receives display labels ("Male", "Female", "Unknown")
+## directly -- no ksformat translation needed here.
+## NA values should not reach this function if .missing is set in the format;
+## any remaining NA is counted separately as a safeguard.
 
 cat_summary <- function(data) {
   if (is.numeric(data)) return(NULL)
-  tbl <- data.frame(x = data[!is.na(data)]) |>
+  data.frame(x = data) |>                    # include all values; NA from .missing
     dplyr::count(x, sort = FALSE, name = "n") |>
     dplyr::mutate(pct = 100 * n / sum(n))
-  tbl
 }
 
 format_sex_counts <- function(x) {
   if (is.null(x)) return("")
-  # Translate raw codes to display labels via ksformat (falls back to raw codes)
-  labels <- tryCatch(ksformat::fput(x$x, "sex_fmt"), error = function(e) x$x)
-  paste(sprintf("%s: %d (%.1f%%)", labels, x$n, x$pct), collapse = "; ")
+  # Labels already translated upstream; just render counts and percentages.
+  paste(sprintf("%s: %d (%.1f%%)", x$x, x$n, x$pct), collapse = "; ")
 }
 
 ## -- 4. One JSON spec: AGE + BMI + SEX ----------------------------------------
 ##
-## parameters:
-##   age  (AGE)   -- continuous: N, mean (SD), median, min, max
-##   bmi  (BMIBL) -- continuous: N, mean (SD), median, min, max
-##   sex  (SEX)   -- categorical: N, category n (%) via cat_summary
-##
-## The categorical "sex_summary" statistic calls cat_summary(), which uses
-## dplyr::count() to group by sex value and compute percentages.  The result
-## is a data frame; format_sex_counts() renders it as "Male: 69 (57.0%); Female: 52 (43.0%)"
-## applying ksformat for label translation.
-##
-## groups.format references "trt_fmt" so kst_generate_table() auto-applies
-## metadata: fput() labels + ordered factor with all three arms.
+## The spec does NOT need a format reference for SEX; the column is already
+## pre-formatted.  cat_summary() + format_sex_counts() are pure data functions.
+## groups.format for TRT01P drives the auto-pipeline in kst_generate_table().
 
 demographics_spec <- '{
   "schema_version": "1.0",
@@ -176,197 +166,54 @@ v <- kst_validate_spec(demographics_spec)
 if (!v$valid) stop(paste(v$errors, collapse = "\n"))
 cat("Spec validation:", v$engine, "-> PASS\n\n")
 
-## -- 6. Generate the table ---------------------------------------------------
+## -- 6. Pre-process: apply formats to TRT01P AND SEX -------------------------
 ##
-## kst_generate_table() detects groups.format, calls kst_extract_metadata()
-## with format_map = list(TRT01P = "trt_fmt"), then kst_apply_metadata() to:
-##   - replace "PBO"/"D50" with "Placebo"/"Drug A 50 mg" via fput()
-##   - set TRT01P as an ordered factor with all three levels (incl. absent D100)
-## Result columns are the formatted arm labels; "Drug A 100 mg" column is
-## present but shows default as.character() output (0/NA) as it has no data.
+## kst_extract_metadata() with format_map for both variables:
+##   TRT01P: codes "PBO"/"D50"/"D100" -> labels; factor levels include absent D100
+##   SEX:    codes "M"/"F" -> "Male"/"Female"; NA -> "Unknown" (.missing label)
+##
+## After kst_apply_metadata(), generated code receives already-labelled values:
+##   cat_summary(SEX) sees "Male", "Female", "Unknown" -- no ksformat call needed.
+
+meta <- kst_extract_metadata(
+  adsl,
+  variables  = c("TRT01P", "SEX"),
+  format_map = list(TRT01P = "trt_fmt", SEX = "sex_fmt")
+)
+adsl_fmt <- kst_apply_metadata(adsl, meta)
+
+cat("SEX after fput():  ", paste(sort(unique(adsl_fmt$SEX), na.last = TRUE), collapse = ", "), "\n")
+cat("TRT01P levels:     ", paste(levels(adsl_fmt$TRT01P), collapse = " | "), "\n\n")
+
+## -- 7. Generate the table ---------------------------------------------------
+##
+## kst_generate_table() still auto-runs the TRT01P metadata pipeline because
+## groups.format is present in the spec.  The pipeline is idempotent: fput() on
+## already-formatted labels ("Placebo") returns them unchanged.
+## The SEX column is NOT in groups.format, so its pre-processing is ours alone.
 
 cat("-- Generated script (first 20 lines) ------------------------------------\n")
 code <- kst_compile(demographics_spec)
 cat(paste(head(strsplit(code, "\n")[[1L]], 20L), collapse = "\n"), "\n...\n\n")
 
 cat("-- Demographics Table ---------------------------------------------------\n")
-result <- kst_generate_table(demographics_spec, adsl)
+result <- kst_generate_table(demographics_spec, adsl_fmt)
 print(result, n = Inf, width = 140)
 
-## -- 7. Inspect rows per parameter ------------------------------------------
+## -- 8. Inspect sex rows only -----------------------------------------------
 
-cat("\n-- Age rows only --------------------------------------------------------\n")
-print(result[result$.param == "Age (years)", ], width = 140)
-
-cat("\n-- Sex rows only --------------------------------------------------------\n")
+cat("\n-- Sex rows (Unknown appears because .missing = 'Unknown') --------------\n")
 print(result[result$.param == "Sex", ], width = 140)
 
-## -- 8. Save the script to a file -------------------------------------------
+## -- 9. Save the script to a file -------------------------------------------
 
 tmp <- tempfile(fileext = ".R")
 kst_save(demographics_spec, tmp)
 cat("\n-- Saved script header -------------------------------------------------\n")
 cat(paste(head(readLines(tmp), 10L), collapse = "\n"), "\n")
 
-## -- 9. Clean up the global format library ----------------------------------
+## -- 10. Clean up the global format library ----------------------------------
 
 fclear()
 cat("\nFormats after fclear(): ")
-fprint()
-
-
-library(ksTable)
-
-if (!requireNamespace("ksformat", quietly = TRUE))
-  stop("This demo requires ksformat: ",
-       'remotes::install_github("crow16384/ksformat")')
-
-library(ksformat)
-
-## -- 1. Register VALUE formats -----------------------------------------------
-##
-## fnew() maps raw data codes to display labels and stores the format by name.
-## "D100" is registered but intentionally absent from the data below, to
-## demonstrate include_missing_levels = true with ksformat-derived levels.
-
-fnew("PBO"  = "Placebo",
-     "D50"  = "Drug A 50 mg",
-     "D100" = "Drug A 100 mg",
-     name   = "trt_fmt")
-
-fnew("M" = "Male", "F" = "Female", .missing = "Unknown", name = "sex_fmt")
-
-cat("Registered formats:\n")
-fprint()
-
-## -- 2. Synthetic ADSL -------------------------------------------------------
-
-set.seed(42L)
-n    <- 200L
-adsl <- data.frame(
-  USUBJID = sprintf("SUBJ-%04d", seq_len(n)),
-  AGE     = round(rnorm(n, mean = 52, sd = 14)),
-  TRT01P  = sample(c("PBO", "D50"), n, replace = TRUE),   # "D100" absent
-  SEX     = sample(c("M", "F"), n, replace = TRUE, prob = c(0.55, 0.45)),
-  stringsAsFactors = FALSE
-)
-cat("\nRaw TRT01P codes in data: ", paste(sort(unique(adsl$TRT01P)), collapse = ", "), "\n")
-
-## -- 3. Extract metadata and apply -------------------------------------------
-##
-## kst_extract_metadata() calls format_get("trt_fmt") to get the ks_format
-## object, reads names(fmt$mappings) for the raw codes in registration order,
-## then applies fput() to convert codes -> labels.  Those labels become the
-## factor levels (including "Drug A 100 mg" which is absent from the data).
-##
-## kst_apply_metadata() calls fput() on TRT01P to replace "PBO"/"D50" with
-## their labels, then sets the column as an ordered factor.
-
-trt_meta <- kst_extract_metadata(
-  adsl,
-  variables  = "TRT01P",
-  format_map = list(TRT01P = "trt_fmt")
-)
-cat("\nResolved factor levels from ksformat:\n")
-cat("  ", paste(trt_meta$TRT01P$levels, collapse = " | "), "\n")
-
-adsl_fmt <- kst_apply_metadata(adsl, trt_meta)
-cat("\nAfter kst_apply_metadata:\n")
-cat("  levels(TRT01P): ", paste(levels(adsl_fmt$TRT01P), collapse = " | "), "\n")
-cat("  'Drug A 100 mg' in data: ", "Drug A 100 mg" %in% adsl_fmt$TRT01P, "\n\n")
-
-## -- 4. Demographics: formatted headers + include_missing_levels -------------
-##
-## Because adsl_fmt$TRT01P is a factor with all three levels (including the
-## absent arm), group_by(TRT01P, .drop = FALSE) produces a "Drug A 100 mg"
-## column filled with the default as.character(0) = "0".
-
-demog_spec <- '{
-  "schema_version": "1.0",
-  "table_spec": {
-    "id":    "demog_ksformat",
-    "title": "Demographics with ksformat headers",
-    "parameter": {
-      "age": { "variable": "AGE", "label": "Age (years)" }
-    },
-    "statistics": {
-      "n":      { "fun": "length",  "label": "N" },
-      "mean":   { "fun": "mean",    "args": { "na.rm": true }, "label": "Mean",
-                  "format": { "type": "sprintf", "pattern": "%.1f" } },
-      "median": { "fun": "median",  "args": { "na.rm": true }, "label": "Median",
-                  "format": { "type": "sprintf", "pattern": "%.1f" } }
-    },
-    "groups": {
-      "by": ["TRT01P"],
-      "include_missing_levels": true,
-      "format": { "TRT01P": "trt_fmt" }
-    },
-    "layout": {
-      "row_structure": "parameter_stat",
-      "column_structure": "groups"
-    }
-  }
-}'
-
-cat("-- Demographics: ksformat column headers, missing arm shown -------------\n")
-## kst_generate_table auto-detects groups.format and applies metadata;
-## adsl (not adsl_fmt) is passed here to show the automatic pipeline.
-demog <- kst_generate_table(demog_spec, adsl)
-print(demog, n = Inf, width = 120)
-
-## -- 5. Cell formatting via ksformat -----------------------------------------
-##
-## statistics.format.type = "ksformat" emits in the generated script:
-##   .value = ksformat::fput(.value_raw, "sex_fmt")
-## The calc function returns a raw code ("M" or "F"); ksformat maps it to
-## a display label in the format step.
-
-mode_code <- function(data) {
-  tbl <- sort(table(data[!is.na(data)]), decreasing = TRUE)
-  if (length(tbl) == 0L) NA_character_ else names(tbl)[[1L]]
-}
-
-sex_spec <- '{
-  "schema_version": "1.0",
-  "table_spec": {
-    "parameter": { "sex": { "variable": "SEX", "label": "Sex" } },
-    "statistics": {
-      "mode_sex": {
-        "fun":    "mode_code",
-        "label":  "Most common",
-        "format": { "type": "ksformat", "format_name": "sex_fmt" }
-      }
-    },
-    "groups":  { "by": ["TRT01P"] },
-    "layout":  { "row_structure": "parameter_stat" }
-  }
-}'
-
-cat("\n-- Generated script (ksformat cell formatting) --------------------------\n")
-cat(kst_compile(sex_spec))
-
-cat("\n\n-- Result (modal sex per arm, rendered by ksformat) ---------------------\n")
-sex_result <- kst_generate_table(sex_spec, adsl_fmt)
-print(sex_result)
-
-## -- 6. Inspect the format object --------------------------------------------
-
-cat("\n-- Format object: trt_fmt -----------------------------------------------\n")
-fmt <- format_get("trt_fmt")
-print(fmt)
-cat("\nKey -> label:\n")
-for (k in names(fmt$mappings))
-  cat(sprintf("  %-6s -> %s\n", k, fput(k, fmt)))
-
-## -- 7. Save the generated script to a file ----------------------------------
-
-tmp <- tempfile(fileext = ".R")
-kst_save(demog_spec, tmp)
-cat("\n-- Saved script (first 12 lines) ----------------------------------------\n")
-cat(paste(head(readLines(tmp), 12L), collapse = "\n"), "\n")
-
-## -- 8. Clean up the global format library -----------------------------------
-
-fclear()
-cat("\nFormat library after fclear():\n")
 fprint()

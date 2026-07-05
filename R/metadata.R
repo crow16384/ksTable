@@ -77,13 +77,19 @@ kst_extract_metadata <- function(data, variables, use_ksformat = TRUE,
     # 1. ksformat: format_get() retrieves the ks_format object;
     #    names(fmt$mappings) are the raw input codes (in registration order);
     #    fput() converts them to display labels which become the factor levels.
+    #    The .missing label (if defined) is appended so NA values converted
+    #    by fput() are included as a proper factor level.
     if (has_ksformat && !is.null(format_name)) {
       tryCatch({
         fmt_fn  <- getExportedValue("ksformat", "format_get")
         fput_fn <- getExportedValue("ksformat", "fput")
         fmt_obj <- fmt_fn(format_name)
         codes   <- names(fmt_obj$mappings)
-        levels  <- fput_fn(codes, fmt_obj)
+        labels  <- fput_fn(codes, fmt_obj)
+        # Include .missing label so NA -> .missing is a valid factor level
+        if (!is.null(fmt_obj$missing_label))
+          labels <- c(labels, fmt_obj$missing_label)
+        levels  <- labels
       }, error = function(e) NULL)
     }
 
