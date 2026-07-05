@@ -9,44 +9,55 @@
 #'
 #' Reads factor levels (and optionally ksformat VALUE format labels) for the
 #' specified variables. The returned metadata list is passed to
-#' \code{\link{kst_compile}} / \code{\link{kst_generate_table}} and is used
-#' to set up factor levels before the generated script runs, enabling correct
+#' \code{\link{kst_generate_table}} and is used to apply display labels and
+#' set factor levels before the generated script runs, enabling correct
 #' handling of \code{include_missing_levels}.
 #'
-#' Priority for level discovery:
+#' Level discovery priority:
 #' \enumerate{
-#'   \item ksformat VALUE format metadata (if \code{use_ksformat = TRUE} and the
-#'         ksformat package is installed and a format is registered for the variable)
-#'   \item Existing factor levels (\code{levels(col)})
-#'   \item Sorted distinct non-NA values (\code{sort(unique(col[!is.na(col)]))})
+#'   \item \strong{ksformat}: when a format name is supplied in
+#'     \code{format_map}, the complete set of registered codes is retrieved
+#'     via \code{format_get()}, then converted to display labels via
+#'     \code{fput()}.  The labels (in registration order) become the factor
+#'     levels.
+#'   \item Existing factor levels (\code{levels(col)}).
+#'   \item Sorted distinct non-NA values.
 #' }
 #'
 #' @param data         Input data frame / tibble.
 #' @param variables    Character vector of variable names to extract metadata for.
-#' @param use_ksformat Logical. Query ksformat for VALUE format metadata.
-#'                     Default \code{TRUE}; silently ignored if ksformat is not installed.
+#' @param use_ksformat Logical. Enable ksformat integration.
+#'                     Default \code{TRUE}; silently ignored when ksformat is not
+#'                     installed or \code{format_map} is empty.
+#' @param format_map   Named list mapping variable names to ksformat format names,
+#'                     e.g. \code{list(TRT01P = "trt_fmt")}.  Drives level
+#'                     discovery and triggers code-to-label conversion in
+#'                     \code{\link{kst_apply_metadata}}.
 #'
 #' @return A named list, one entry per variable:
 #'   \describe{
-#'     \item{\code{type}}{Character. R class of the column (e.g. \code{"factor"}).}
-#'     \item{\code{levels}}{Character vector of ordered levels.}
-#'     \item{\code{format}}{Character or \code{NULL}. ksformat format name if found.}
+#'     \item{\code{type}}{Character. R class of the column.}
+#'     \item{\code{levels}}{Character vector of ordered display-string levels.}
+#'     \item{\code{format_name}}{Character or \code{NULL}. ksformat format name,
+#'       used by \code{\link{kst_apply_metadata}} to apply \code{fput()}.}
 #'   }
 #'
 #' @examples
 #' \dontrun{
-#' adsl <- tibble::tibble(
-#'   TRT = factor(c("A", "B"), levels = c("Placebo", "Drug A", "Drug B"))
-#' )
-#' meta <- kst_extract_metadata(adsl, "TRT")
-#' meta$TRT$levels  # "Placebo" "Drug A" "Drug B"
+#' library(ksformat)
+#' fnew("A" = "Drug A", "P" = "Placebo", name = "trt_fmt")
+#' meta <- kst_extract_metadata(adsl, "TRT01P",
+#'                               format_map = list(TRT01P = "trt_fmt"))
+#' meta$TRT01P$levels   # c("Drug A", "Placebo")
+#' fclear()
 #' }
 #'
 #' @export
-kst_extract_metadata <- function(data, variables, use_ksformat = TRUE) {
+kst_extract_metadata <- function(data, variables, use_ksformat = TRUE,
+                                  format_map = list()) {
   stopifnot(is.data.frame(data))
 
-  result <- vector("list", length(variables))
+  result       <- vector("list", length(variables))
   names(result) <- variables
 
   has_ksformat <- use_ksformat &&
@@ -59,40 +70,35 @@ kst_extract_metadata <- function(data, variables, use_ksformat = TRUE) {
       next
     }
 
-    col    <- data[[v]]
-    levels <- NULL
-    fmt    <- NULL
+    col         <- data[[v]]
+    levels      <- NULL
+    format_name <- format_map[[v]]    # NULL when not supplied
 
-    # Optionally query ksformat for format metadata.
-    # Use dynamic dispatch to avoid R CMD check complaining about
-    # unexported ksformat functions when ksformat is not installed.
-    if (has_ksformat) {
-      fmt <- tryCatch({
-        fget_fn <- getExportedValue("ksformat", "fget")
-        fget_fn(v)
+    # 1. ksformat: format_get() retrieves the ks_format object;
+    #    names(fmt$mappings) are the raw input codes (in registration order);
+    #    fput() converts them to display labels which become the factor levels.
+    if (has_ksformat && !is.null(format_name)) {
+      tryCatch({
+        fmt_fn  <- getExportedValue("ksformat", "format_get")
+        fput_fn <- getExportedValue("ksformat", "fput")
+        fmt_obj <- fmt_fn(format_name)
+        codes   <- names(fmt_obj$mappings)
+        levels  <- fput_fn(codes, fmt_obj)
       }, error = function(e) NULL)
-      if (!is.null(fmt)) {
-        levels <- tryCatch({
-          flevels_fn <- getExportedValue("ksformat", "flevels")
-          names(flevels_fn(fmt))
-        }, error = function(e) NULL)
-      }
     }
 
-    # 2. Factor levels
-    if (is.null(levels) && is.factor(col)) {
+    # 2. Existing factor levels
+    if (is.null(levels) && is.factor(col))
       levels <- levels(col)
-    }
 
-    # 3. Distinct values
-    if (is.null(levels)) {
+    # 3. Sorted distinct values
+    if (is.null(levels))
       levels <- as.character(sort(unique(col[!is.na(col)])))
-    }
 
     result[[v]] <- list(
-      type   = class(col)[[1L]],
-      levels = levels,
-      format = fmt
+      type        = class(col)[[1L]],
+      levels      = levels,
+      format_name = format_name
     )
   }
 
@@ -101,23 +107,39 @@ kst_extract_metadata <- function(data, variables, use_ksformat = TRUE) {
 
 #' Apply extracted metadata to a data frame
 #'
-#' Converts grouping variables to ordered factors using the levels from
-#' \code{\link{kst_extract_metadata}}. This is required for
-#' \code{include_missing_levels = true} to work correctly via
-#' \code{group_by(..., .drop = FALSE)}.
+#' For each variable in \code{metadata}:
+#' \enumerate{
+#'   \item If a \code{format_name} is recorded (from \code{format_map} in
+#'     \code{\link{kst_extract_metadata}}), applies \code{ksformat::fput()} to
+#'     replace raw codes with display labels.
+#'   \item Converts the column to an ordered factor with the levels from
+#'     the metadata, including any levels absent from the data (required for
+#'     \code{include_missing_levels = true} via \code{group_by(..., .drop = FALSE)}).
+#' }
 #'
 #' @param data      Input data frame.
 #' @param metadata  List from \code{\link{kst_extract_metadata}}.
 #'
-#' @return The data frame with factor variables re-levelled.
+#' @return The data frame with columns re-coded and re-levelled.
 #'
 #' @export
 kst_apply_metadata <- function(data, metadata) {
+  has_ksformat <- requireNamespace("ksformat", quietly = TRUE)
+
   for (v in names(metadata)) {
     meta <- metadata[[v]]
-    if (v %in% names(data) && !is.null(meta$levels)) {
-      data[[v]] <- factor(data[[v]], levels = meta$levels)
+    if (!v %in% names(data) || is.null(meta$levels)) next
+
+    # Step 1: convert raw codes -> display labels via fput()
+    if (has_ksformat && !is.null(meta$format_name)) {
+      tryCatch({
+        fput_fn   <- getExportedValue("ksformat", "fput")
+        data[[v]] <- fput_fn(data[[v]], meta$format_name)
+      }, error = function(e) NULL)
     }
+
+    # Step 2: set as ordered factor (levels include absent ones)
+    data[[v]] <- factor(data[[v]], levels = meta$levels)
   }
   data
 }

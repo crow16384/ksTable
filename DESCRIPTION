@@ -25,9 +25,9 @@ Depends:
 Imports:
     dplyr (>= 1.1.0),
     tidyr (>= 1.3.0),
-    jsonlite (>= 1.8.0)
+    jsonlite (>= 1.8.0),
+    ksformat (>= 0.7.0)
 Suggests:
-    ksformat (>= 0.7.0),
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,

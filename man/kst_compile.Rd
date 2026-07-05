@@ -9,8 +9,10 @@ kst_compile(json_spec, metadata = NULL)
 \arguments{
 \item{json_spec}{JSON string or path to a \code{.json} file.}
 
-\item{metadata}{Optional metadata list from \code{\link{kst_extract_metadata}}.
-Currently reserved for future use (ignored).}
+\item{metadata}{Optional pre-extracted metadata list from
+\code{\link{kst_extract_metadata}}. When \code{NULL} (default) and the spec
+contains \code{groups.format} entries, metadata is extracted automatically
+when ksformat is installed.}
 }
 \value{
 \code{character(1)} — a plain R script ready to be read, modified,

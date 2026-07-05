@@ -12,11 +12,16 @@ kst_apply_metadata(data, metadata)
 \item{metadata}{List from \code{\link{kst_extract_metadata}}.}
 }
 \value{
-The data frame with factor variables re-levelled.
+The data frame with columns re-coded and re-levelled.
 }
 \description{
-Converts grouping variables to ordered factors using the levels from
-\code{\link{kst_extract_metadata}}. This is required for
-\code{include_missing_levels = true} to work correctly via
-\code{group_by(..., .drop = FALSE)}.
+For each variable in \code{metadata}:
+\enumerate{
+\item If a \code{format_name} is recorded (from \code{format_map} in
+\code{\link{kst_extract_metadata}}), applies \code{ksformat::fput()} to
+replace raw codes with display labels.
+\item Converts the column to an ordered factor with the levels from
+the metadata, including any levels absent from the data (required for
+\code{include_missing_levels = true} via \code{group_by(..., .drop = FALSE)}).
+}
 }

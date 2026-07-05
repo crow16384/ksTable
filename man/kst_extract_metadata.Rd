@@ -4,47 +4,58 @@
 \alias{kst_extract_metadata}
 \title{Extract variable metadata from a data frame}
 \usage{
-kst_extract_metadata(data, variables, use_ksformat = TRUE)
+kst_extract_metadata(data, variables, use_ksformat = TRUE, format_map = list())
 }
 \arguments{
 \item{data}{Input data frame / tibble.}
 
 \item{variables}{Character vector of variable names to extract metadata for.}
 
-\item{use_ksformat}{Logical. Query ksformat for VALUE format metadata.
-Default \code{TRUE}; silently ignored if ksformat is not installed.}
+\item{use_ksformat}{Logical. Enable ksformat integration.
+Default \code{TRUE}; silently ignored when ksformat is not
+installed or \code{format_map} is empty.}
+
+\item{format_map}{Named list mapping variable names to ksformat format names,
+e.g. \code{list(TRT01P = "trt_fmt")}.  Drives level
+discovery and triggers code-to-label conversion in
+\code{\link{kst_apply_metadata}}.}
 }
 \value{
 A named list, one entry per variable:
 \describe{
-\item{\code{type}}{Character. R class of the column (e.g. \code{"factor"}).}
-\item{\code{levels}}{Character vector of ordered levels.}
-\item{\code{format}}{Character or \code{NULL}. ksformat format name if found.}
+\item{\code{type}}{Character. R class of the column.}
+\item{\code{levels}}{Character vector of ordered display-string levels.}
+\item{\code{format_name}}{Character or \code{NULL}. ksformat format name,
+used by \code{\link{kst_apply_metadata}} to apply \code{fput()}.}
 }
 }
 \description{
 Reads factor levels (and optionally ksformat VALUE format labels) for the
 specified variables. The returned metadata list is passed to
-\code{\link{kst_compile}} / \code{\link{kst_generate_table}} and is used
-to set up factor levels before the generated script runs, enabling correct
+\code{\link{kst_generate_table}} and is used to apply display labels and
+set factor levels before the generated script runs, enabling correct
 handling of \code{include_missing_levels}.
 }
 \details{
-Priority for level discovery:
+Level discovery priority:
 \enumerate{
-\item ksformat VALUE format metadata (if \code{use_ksformat = TRUE} and the
-ksformat package is installed and a format is registered for the variable)
-\item Existing factor levels (\code{levels(col)})
-\item Sorted distinct non-NA values (\code{sort(unique(col[!is.na(col)]))})
+\item \strong{ksformat}: when a format name is supplied in
+\code{format_map}, the complete set of registered codes is retrieved
+via \code{format_get()}, then converted to display labels via
+\code{fput()}.  The labels (in registration order) become the factor
+levels.
+\item Existing factor levels (\code{levels(col)}).
+\item Sorted distinct non-NA values.
 }
 }
 \examples{
 \dontrun{
-adsl <- tibble::tibble(
-  TRT = factor(c("A", "B"), levels = c("Placebo", "Drug A", "Drug B"))
-)
-meta <- kst_extract_metadata(adsl, "TRT")
-meta$TRT$levels  # "Placebo" "Drug A" "Drug B"
+library(ksformat)
+fnew("A" = "Drug A", "P" = "Placebo", name = "trt_fmt")
+meta <- kst_extract_metadata(adsl, "TRT01P",
+                              format_map = list(TRT01P = "trt_fmt"))
+meta$TRT01P$levels   # c("Drug A", "Placebo")
+fclear()
 }
 
 }
