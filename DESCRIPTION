@@ -31,7 +31,8 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
-    glue (>= 1.7.0)
+    glue (>= 1.7.0),
+    jsonvalidate (>= 1.3.2)
 VignetteBuilder: knitr
 URL: https://github.com/crow16384/ksTable
 BugReports: https://github.com/crow16384/ksTable/issues
