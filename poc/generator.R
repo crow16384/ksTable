@@ -38,13 +38,13 @@ needs_list_wrap <- function(fmt) {
   !is.null(fmt) && (fmt$type %||% "") %in% c("custom", "template")
 }
 
-# Generates the R expression for the .value column in the format step.
-# When a format spec is provided, .value is a character string (formatted display).
-# When no format spec, .value keeps the raw type from the calc function;
-# as.character() is applied during assembly so pivot_wider gets a uniform column.
+# Generates the format expression for the .value column.
+# Every statistic has a formatter; when no format spec is given the default
+# formatter is as.character(). All formatters return character, so bind_rows
+# across chunks is always type-safe.
 gen_format_expr <- function(s) {
   fmt <- s$format
-  if (is.null(fmt)) return(".value_raw")  # preserve raw type; coercion at assembly
+  if (is.null(fmt)) return("as.character(.value_raw)")  # default formatter
   switch(fmt$type %||% "asis",
     sprintf  = sprintf('sprintf(%s, .value_raw)', r_str(fmt$pattern %||% "%s")),
     custom   = {
@@ -142,11 +142,7 @@ gen_parameter_stat <- function(ts) {
   }
 
   c(lines,
-    "# Coerce each chunk's .value to character before combining",
-    ".long <- dplyr::bind_rows(lapply(.chunks, function(.c) {",
-    "  .c$.value <- as.character(.c$.value)",
-    "  .c",
-    "}))",
+    ".long <- dplyr::bind_rows(.chunks)",
     "",
     "tidyr::pivot_wider(",
     "  .long,",
@@ -224,12 +220,9 @@ gen_hierarchical <- function(ts) {
     "  )",
     "",
     # .is_child FALSE < TRUE, so parent rows sort before child rows within each .parent
-    "# Coerce each chunk's .value to character before combining",
-    ".long <- dplyr::bind_rows(lapply(.chunks, function(.c) {",
-    "  .c$.value <- as.character(.c$.value)",
-    "  .c",
-    "})) |>",
-    "  dplyr::arrange(.parent, .is_child, .row_label)",,
+    "# parent rows (.is_child = FALSE) sort before child rows within each .parent",
+    ".long <- dplyr::bind_rows(.chunks) |>",
+    "  dplyr::arrange(.parent, .is_child, .row_label)",
     "",
     "tidyr::pivot_wider(",
     "  .long,",
