@@ -62,36 +62,28 @@ gen_format_expr <- function(s) {
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-#' Compile a JSON DSL spec to a self-contained R function definition.
+#' Compile a JSON DSL spec to a plain R script (character string).
 #'
-#' Returns a complete \code{function(data)} definition.
-#' Calculation and format functions referenced in the JSON spec are emitted as
-#' plain function calls (e.g., \code{count(AGE)}, \code{format_mean_sd}) and
-#' resolved from the calling environment at runtime — global env, attached
-#' packages, or wherever the caller has them in scope.
-#' Callable as: \code{eval(parse(text = code))(data)}
+#' The returned string is a self-contained script that assumes \code{data}
+#' is bound in the evaluation environment. The user can step through it
+#' interactively, inspect intermediate objects (\code{.chunks}, \code{.long}),
+#' or execute the whole thing with \code{eval(parse(text = code))}.
 #'
 #' @param json_spec  JSON string (not a file path)
-#' @return  character(1) — a \code{function(data)} definition
+#' @return  character(1) — a plain R script
 poc_compile <- function(json_spec) {
   spec <- jsonlite::fromJSON(json_spec, simplifyVector = FALSE)
   ts   <- spec$table_spec
 
   row_structure <- ts$layout$row_structure %||% "parameter_stat"
 
-  body_lines <- switch(row_structure,
+  lines <- switch(row_structure,
     parameter_stat = gen_parameter_stat(ts),
     hierarchical   = gen_hierarchical(ts),
     stop("Unsupported row_structure: '", row_structure, "'", call. = FALSE)
   )
 
-  # Indent body and wrap in a single-argument function definition
-  indented <- ifelse(nzchar(body_lines), paste0("  ", body_lines), "")
-  paste(c(
-    "function(data) {",
-    indented,
-    "}"
-  ), collapse = "\n")
+  paste(lines, collapse = "\n")
 }
 
 # ── parameter_stat ────────────────────────────────────────────────────────────

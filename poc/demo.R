@@ -90,7 +90,8 @@ demog_json <- '{
 cat("Example 1 \u2500 Demographics (parameter_stat)\n\n")
 code1 <- poc_compile(demog_json)
 cat("Generated code:\n\n", code1, "\n\n")
-result1 <- eval(parse(text = code1))(adsl)
+data <- adsl
+result1 <- eval(parse(text = code1))
 cat("Result:\n")
 print(result1, n = Inf)
 
@@ -126,7 +127,8 @@ ae_json <- '{
 cat("\nExample 2 \u2500 Adverse Events (hierarchical)\n\n")
 code2 <- poc_compile(ae_json)
 cat("Generated code:\n\n", code2, "\n\n")
-result2 <- eval(parse(text = code2))(ae)
+data <- ae
+result2 <- eval(parse(text = code2))
 cat("Result:\n")
 print(result2, n = Inf)
 
