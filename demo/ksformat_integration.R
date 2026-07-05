@@ -45,10 +45,8 @@ adsl <- data.frame(
 ##
 ## Because ONE spec covers both numeric (AGE, BMIBL) and categorical (SEX)
 ## parameters, every calc function must handle either type gracefully:
-##   - Numeric stats return NA for character columns (shown as blank "")
-##   - Sex counts return NA for numeric columns (shown as blank "")
-## This mirrors how clinical demographics tables leave cells blank rather
-## than showing "0" or "NA" for inapplicable combinations.
+##   - Numeric stats return NA / NULL for character columns (shown as "")
+##   - The categorical summary returns NULL for numeric columns (shown as "")
 
 ## Continuous stats -- safe versions that return NA for character input
 mean_sd <- function(data) {
@@ -69,32 +67,46 @@ format_num_or_blank <- function(x) if (is.na(x) || is.infinite(x)) "" else sprin
 min_safe <- function(data) { if (!is.numeric(data)) NA_real_ else min(data, na.rm = TRUE) }
 max_safe <- function(data) { if (!is.numeric(data)) NA_real_ else max(data, na.rm = TRUE) }
 
-## Categorical stats -- return NA for numeric columns (blank in output)
-n_male   <- function(data) if (is.numeric(data)) NA_integer_ else sum(data == "M", na.rm = TRUE)
-n_female <- function(data) if (is.numeric(data)) NA_integer_ else sum(data == "F", na.rm = TRUE)
-fmt_int_or_blank <- function(x) if (is.na(x)) "" else as.character(x)
+## Categorical summary -- replaces separate n_male / n_female / mode_sex.
+##
+## cat_summary() uses dplyr internally to count each category value and
+## compute its within-group percentage.  Returns a data frame (tibble);
+## returns NULL for numeric columns so the format step shows "".
+##
+## format_sex_counts() renders the tibble as a single display string and
+## applies ksformat to translate raw codes ("M", "F") to labels
+## ("Male", "Female") -- so the ksformat integration is inside the
+## format function rather than in a separate format spec.
 
-## Modal sex code per group; NA for numeric variables.
-## Custom format wrapper: blank for NA, ksformat label for actual codes.
-mode_sex <- function(data) {
-  if (is.numeric(data)) return(NA_character_)
-  tbl <- sort(table(data[!is.na(data)]), decreasing = TRUE)
-  if (length(tbl) == 0L) NA_character_ else names(tbl)[[1L]]
+cat_summary <- function(data) {
+  if (is.numeric(data)) return(NULL)
+  tbl <- data.frame(x = data[!is.na(data)]) |>
+    dplyr::count(x, sort = FALSE, name = "n") |>
+    dplyr::mutate(pct = 100 * n / sum(n))
+  tbl
 }
-fmt_sex_or_blank <- function(x) {
-  if (is.na(x)) return("")
-  ksformat::fput(x, "sex_fmt")   # "M" -> "Male", "F" -> "Female"
+
+format_sex_counts <- function(x) {
+  if (is.null(x)) return("")
+  # Translate raw codes to display labels via ksformat (falls back to raw codes)
+  labels <- tryCatch(ksformat::fput(x$x, "sex_fmt"), error = function(e) x$x)
+  paste(sprintf("%s: %d (%.1f%%)", labels, x$n, x$pct), collapse = "; ")
 }
 
 ## -- 4. One JSON spec: AGE + BMI + SEX ----------------------------------------
 ##
 ## parameters:
-##   age  (AGE)   -- continuous: n, mean (SD), median, min, max
-##   bmi  (BMIBL) -- continuous: n, mean (SD), median
-##   sex  (SEX)   -- categorical: total n, n Male, n Female, modal sex (ksformat)
+##   age  (AGE)   -- continuous: N, mean (SD), median, min, max
+##   bmi  (BMIBL) -- continuous: N, mean (SD), median, min, max
+##   sex  (SEX)   -- categorical: N, category n (%) via cat_summary
+##
+## The categorical "sex_summary" statistic calls cat_summary(), which uses
+## dplyr::count() to group by sex value and compute percentages.  The result
+## is a data frame; format_sex_counts() renders it as "Male: 69 (57.0%); Female: 52 (43.0%)"
+## applying ksformat for label translation.
 ##
 ## groups.format references "trt_fmt" so kst_generate_table() auto-applies
-## fput() labels and sets factor levels (including the absent D100 arm).
+## metadata: fput() labels + ordered factor with all three arms.
 
 demographics_spec <- '{
   "schema_version": "1.0",
@@ -140,20 +152,10 @@ demographics_spec <- '{
         "label":  "Max",
         "format": { "type": "custom", "fun": "format_num_or_blank" }
       },
-      "n_male": {
-        "fun":    "n_male",
-        "label":  "Male n",
-        "format": { "type": "custom", "fun": "fmt_int_or_blank" }
-      },
-      "n_female": {
-        "fun":    "n_female",
-        "label":  "Female n",
-        "format": { "type": "custom", "fun": "fmt_int_or_blank" }
-      },
-      "mode_sex": {
-        "fun":    "mode_sex",
-        "label":  "Most common",
-        "format": { "type": "custom", "fun": "fmt_sex_or_blank" }
+      "sex_summary": {
+        "fun":    "cat_summary",
+        "label":  "n (%)",
+        "format": { "type": "custom", "fun": "format_sex_counts" }
       }
     },
     "groups": {
