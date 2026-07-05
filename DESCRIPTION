@@ -32,5 +32,6 @@ Suggests:
     knitr,
     rmarkdown,
     glue (>= 1.7.0)
+VignetteBuilder: knitr
 URL: https://github.com/crow16384/ksTable
 BugReports: https://github.com/crow16384/ksTable/issues

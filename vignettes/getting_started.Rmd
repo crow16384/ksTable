@@ -1,0 +1,432 @@
+---
+title: "Getting Started with ksTable"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with ksTable}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+## Overview
+
+**ksTable** reads a declarative JSON table specification and generates a plain,
+human-readable dplyr/tidyr R script. Running that script against your data
+produces a formatted tibble ready for rendering with
+[ksTFL](https://github.com/crow16384/ksTFL).
+
+```
+JSON spec  →  kst_compile()  →  R script  →  eval()  →  tibble  →  ksTFL
+```
+
+Key design principles:
+
+* **Declarative**: describe *what* you want, not how to compute it.
+* **Plain-R output**: the generated script is ordinary dplyr — paste it into
+  the console, step through it, save it to a file.
+* **No infrastructure**: calc and format functions are resolved from your
+  environment just like any other R function call.
+* **Isolated execution**: intermediate objects (`.chunks`, `.long`) stay in a
+  private environment and never pollute your workspace.
+
+---
+
+## Installation
+
+```{r install, eval = FALSE}
+remotes::install_github("crow16384/ksTable")
+```
+
+```{r library}
+library(ksTable)
+```
+
+---
+
+## Function contracts
+
+ksTable uses two distinct function types, both defined by the user in their
+own environment.
+
+### Calc functions
+
+Referenced by the `"fun"` field in a statistic.  Receive a **column vector**
+(one group's data), return a raw **numeric** or **named list**.
+*No string formatting here.*
+
+```{r calc-fns}
+count   <- function(data) sum(!is.na(data))          # → integer
+
+mean_sd <- function(data) list(                       # → named list
+  mean = mean(data, na.rm = TRUE),
+  sd   = sd(data,   na.rm = TRUE)
+)
+
+count_n <- function(data) length(data)               # → integer
+```
+
+### Format functions
+
+Referenced by `"format": { "type": "custom", "fun": "..." }`.  Receive the
+raw value from the corresponding calc function, return a single
+**character** string.
+
+```{r format-fns}
+format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
+```
+
+Built-in R functions (`median`, `sum`, `mean`, …) can be used directly as
+calc functions.  Extra arguments — such as `na.rm = TRUE` — are specified in
+the JSON spec via the optional `"args"` field (see below).
+
+---
+
+## Example 1: Demographics table
+
+### Synthetic data
+
+```{r data}
+set.seed(42)
+n <- 480L
+
+adsl <- tibble::tibble(
+  USUBJID = sprintf("%03d-%04d", rep(1:3, each = n %/% 3L), seq_len(n)),
+  AGE     = round(rnorm(n, 45, 12)),
+  SEX     = sample(c("M", "F"), n, replace = TRUE),
+  TRT01P  = rep(c("Placebo", "Drug A", "Drug B"), each = n %/% 3L)
+)
+```
+
+### JSON spec
+
+Three statistics are requested:
+
+* **n** — a user-defined `count()` function.
+* **Mean (SD)** — a user-defined `mean_sd()` returning a named list, formatted
+  by a user-defined `format_mean_sd()`.
+* **Median** — the built-in `median()` with `na.rm = TRUE` supplied via `"args"`.
+
+```{r demog-json}
+demog_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "demographics_age",
+    "title": "Age by Treatment Group",
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n": {
+        "fun":   "count",
+        "label": "n"
+      },
+      "mean_sd": {
+        "fun":    "mean_sd",
+        "label":  "Mean (SD)",
+        "format": { "type": "custom", "fun": "format_mean_sd" }
+      },
+      "median": {
+        "fun":   "median",
+        "args":  { "na.rm": true },
+        "label": "Median"
+      }
+    },
+    "groups": {
+      "by": ["TRT01P"],
+      "include_missing_levels": false
+    },
+    "layout": {
+      "row_structure":    "parameter_stat",
+      "column_structure": "groups"
+    }
+  }
+}'
+```
+
+### Inspect the generated script
+
+`kst_compile()` returns a character string you can read before running it:
+
+```{r compile}
+code <- kst_compile(demog_spec)
+cat(code)
+```
+
+```
+.chunks <- list()
+
+.chunks[[1L]] <- data |>
+  dplyr::group_by(TRT01P) |>
+  dplyr::summarize(
+    .value_raw  = count(AGE),
+    .groups     = "drop"
+  ) |>
+  dplyr::mutate(
+    .value      = as.character(.value_raw),
+    .param      = "Age (years)",
+    .stat_label = "n",
+    .value_raw  = NULL
+  )
+
+.chunks[[2L]] <- data |>
+  dplyr::group_by(TRT01P) |>
+  dplyr::summarize(
+    .value_raw  = list(mean_sd(AGE)),
+    .groups     = "drop"
+  ) |>
+  dplyr::mutate(
+    .value      = vapply(.value_raw, format_mean_sd, character(1L)),
+    .param      = "Age (years)",
+    .stat_label = "Mean (SD)",
+    .value_raw  = NULL
+  )
+
+.chunks[[3L]] <- data |>
+  dplyr::group_by(TRT01P) |>
+  dplyr::summarize(
+    .value_raw  = median(AGE, na.rm = TRUE),
+    .groups     = "drop"
+  ) |>
+  dplyr::mutate(
+    .value      = as.character(.value_raw),
+    .param      = "Age (years)",
+    .stat_label = "Median",
+    .value_raw  = NULL
+  )
+
+.long <- dplyr::bind_rows(.chunks)
+
+tidyr::pivot_wider(
+  .long,
+  id_cols     = c(.param, .stat_label),
+  names_from  = c(TRT01P),
+  values_from = .value
+)
+```
+
+### Generate the table
+
+```{r generate-demog}
+result <- kst_generate_table(demog_spec, adsl)
+print(result)
+```
+
+```
+# A tibble: 3 × 5
+  .param      .stat_label `Drug A`     `Drug B`     Placebo
+1 Age (years) n           160          160          160
+2 Age (years) Mean (SD)   44.9 (11.37) 44.9 (11.84) 44.5 (11.96)
+3 Age (years) Median      45           44.5         44
+```
+
+---
+
+## Example 2: Adverse events table (hierarchical)
+
+The `hierarchical` row structure produces parent rows (SOC) with child rows
+(PT) nested beneath them.
+
+### Additional data
+
+```{r ae-data}
+set.seed(7)
+n_ae   <- 300L
+ae_ids <- sample(adsl$USUBJID, n_ae, replace = TRUE)
+ae_soc <- sample(c("Cardiac disorders", "Gastrointestinal disorders"),
+                 n_ae, replace = TRUE, prob = c(0.4, 0.6))
+ae_pt  <- ifelse(
+  ae_soc == "Cardiac disorders",
+  sample(c("Myocardial infarction", "Angina pectoris"), n_ae, replace = TRUE),
+  sample(c("Nausea", "Diarrhea"), n_ae, replace = TRUE)
+)
+ae <- tibble::tibble(
+  USUBJID = ae_ids,
+  TRT01P  = adsl$TRT01P[match(ae_ids, adsl$USUBJID)],
+  AESOC   = ae_soc,
+  AEDECOD = ae_pt
+)
+```
+
+### JSON spec
+
+```{r ae-json}
+ae_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "adverse_events",
+    "title": "Adverse Events by SOC and PT",
+    "parameter": {
+      "soc": {
+        "variable": "AESOC",
+        "label":    "",
+        "nested": {
+          "pt": { "variable": "AEDECOD" }
+        }
+      }
+    },
+    "statistics": {
+      "n": {
+        "fun":   "length",
+        "args":  {},
+        "label": "n"
+      }
+    },
+    "groups": {
+      "by": ["TRT01P"],
+      "include_missing_levels": false
+    },
+    "layout": {
+      "row_structure":    "hierarchical",
+      "column_structure": "groups"
+    }
+  }
+}'
+```
+
+### Generate the table
+
+```{r generate-ae}
+ae_result <- kst_generate_table(ae_spec, ae)
+print(ae_result)
+```
+
+```
+# A tibble: 6 × 7
+  .parent             .is_child .row_label           .stat_label Drug A Drug B Placebo
+1 Cardiac disorders   FALSE     Cardiac disorders    n           36     39     34
+2 Cardiac disorders   TRUE      Angina pectoris      n           14     21     21
+3 Cardiac disorders   TRUE      Myocardial infarction n          22     18     13
+4 Gastrointestinal d… FALSE     Gastrointestinal d…  n           73     64     54
+5 Gastrointestinal d… TRUE      Diarrhea             n           39     31     35
+6 Gastrointestinal d… TRUE      Nausea               n           34     33     19
+```
+
+The `.parent` and `.is_child` columns identify the hierarchy; ksTFL uses them
+to apply indentation and header formatting during rendering.
+
+---
+
+## Step-through debugging
+
+`kst_generate_table()` runs the script in `new.env(parent = environment())`.
+For interactive debugging, you can set up the same environment manually and
+inspect every intermediate object:
+
+```{r debug}
+code <- kst_compile(demog_spec)
+
+env       <- new.env(parent = environment())   # calc/format functions visible via parent
+env$data  <- adsl
+
+# Run the whole script at once
+result <- eval(parse(text = code), envir = env)
+
+# Or paste individual lines into the console to step through:
+#   eval(parse(text = ".chunks <- list()"), envir = env)
+#   eval(parse(text = ".chunks[[1L]] <- data |> ..."), envir = env)
+#   env$.chunks[[1L]]   # inspect first chunk
+
+# All intermediates are available for inspection
+ls(env, all.names = TRUE)
+# → ".chunks"  ".long"  "data"
+
+env$.long   # the assembled long-format table before pivoting
+```
+
+---
+
+## Using built-in R functions
+
+Any function available in the calling environment can be used as a calc
+function.  Pass extra arguments via `"args"` in the JSON spec:
+
+```json
+"statistics": {
+  "n":      { "fun": "sum",      "args": { "na.rm": true  }, "label": "N"      },
+  "median": { "fun": "median",   "args": { "na.rm": true  }, "label": "Median" },
+  "q25":    { "fun": "quantile", "args": { "probs": 0.25, "na.rm": true }, "label": "Q1" },
+  "sd":     { "fun": "sd",       "args": { "na.rm": true  }, "label": "SD"     }
+}
+```
+
+Generated code (for `median`):
+
+```r
+.value_raw = median(AGE, na.rm = TRUE)
+```
+
+`"args"` values are converted to R literals:
+
+| JSON type | R literal |
+|-----------|-----------|
+| `true` / `false` | `TRUE` / `FALSE` |
+| `null` | `NULL` |
+| number | numeric literal |
+| string | double-quoted character |
+
+---
+
+## Validation
+
+`kst_validate_spec()` checks the spec without generating any code. It is
+useful for early feedback and for testing JSON produced by tooling or users.
+
+```{r validate-ok}
+result <- kst_validate_spec(demog_spec)
+result$valid    # TRUE
+result$errors   # character(0)
+```
+
+```{r validate-bad}
+bad_spec <- '{"schema_version":"1.0","table_spec":{"parameter":{},
+               "statistics":{},"groups":{"by":["TRT"]},"layout":{}}}'
+result <- kst_validate_spec(bad_spec)
+result$valid
+# [1] FALSE
+result$errors
+# [1] "Missing required field: /table_spec/layout/row_structure"
+```
+
+Injection attempts are rejected at the identifier level (SR-1):
+
+```{r validate-inject}
+inject <- '{"schema_version":"1.0","table_spec":{"parameter":{
+              "p":{"variable":"AGE); system(\\"rm -rf /\\""}},
+              "statistics":{"n":{"fun":"count"}},"groups":{"by":["TRT"]},
+              "layout":{"row_structure":"parameter_stat"}}}'
+result <- kst_validate_spec(inject)
+result$valid
+# [1] FALSE
+result$errors
+# [1] "'AGE); system(\"rm -rf /\"' is not a valid R identifier ..."
+```
+
+---
+
+## Performance
+
+Compilation is ~130–150 µs per call (pure R string assembly). At that rate,
+compiling is negligible overhead even in loops or Shiny apps.
+
+```{r benchmark}
+system.time(for (i in 1:10000L) kst_compile(demog_spec))
+# user  system elapsed
+# 1.3   0.0     1.3      → ~130 µs per call
+```
+
+---
+
+## Next steps
+
+* See `vignette("dsl_reference")` for the complete JSON schema reference.
+* The generated script can be saved to a `.R` file and used independently of
+  the package — useful for audit trails in regulated environments.
+* Pass `envir = rlang::caller_env()` to `kst_generate_table()` explicitly if
+  you need precise control over function lookup scope.
