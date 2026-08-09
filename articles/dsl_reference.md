@@ -1,0 +1,426 @@
+# DSL Reference
+
+![ksTable logo](figures/logo.png)
+
+This document describes every field in the `ksTable` JSON DSL.
+
+## Top-level structure
+
+``` json
+{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id":         "<string>",
+    "title":      "<string>",
+    "parameter":  { ... },
+    "statistics": { ... },
+    "groups":     { ... },
+    "layout":     { ... }
+  }
+}
+```
+
+| Field                   | Required | Description                            |
+|-------------------------|----------|----------------------------------------|
+| `schema_version`        | No       | DSL version string (currently `"1.0"`) |
+| `table_spec.id`         | No       | Unique identifier for the table        |
+| `table_spec.title`      | No       | Human-readable title                   |
+| `table_spec.parameter`  | **Yes**  | Map of parameters (see below)          |
+| `table_spec.statistics` | **Yes**  | Map of statistics (see below)          |
+| `table_spec.groups`     | **Yes**  | Grouping/stratification                |
+| `table_spec.layout`     | **Yes**  | Row/column structure                   |
+
+------------------------------------------------------------------------
+
+## `parameter`
+
+A named map where each key is a parameter identifier and the value
+describes a variable in the input data.
+
+``` json
+"parameter": {
+  "<param_id>": {
+    "variable": "<column_name>",
+    "label":    "<display_label>",
+    "nested":   { "<child_id>": { "variable": "<col>", "label": "<lbl>" } }
+  }
+}
+```
+
+| Field | Required | Description |
+|----|----|----|
+| `variable` | **Yes** | Column name in the input `data` frame. Must be a valid R identifier. |
+| `label` | No | Display label for this parameter row. Defaults to `variable`. |
+| `nested` | No | One child parameter for `hierarchical` row structure (SOC → PT). |
+
+### Example — simple
+
+``` json
+"parameter": {
+  "age": { "variable": "AGE", "label": "Age (years)" }
+}
+```
+
+### Example — hierarchical
+
+``` json
+"parameter": {
+  "soc": {
+    "variable": "AESOC",
+    "label":    "",
+    "nested": {
+      "pt": { "variable": "AEDECOD" }
+    }
+  }
+}
+```
+
+------------------------------------------------------------------------
+
+## `statistics`
+
+A named map where each key is a statistic identifier and the value
+describes how to compute and display it.
+
+``` json
+"statistics": {
+  "<stat_id>": {
+    "fun":    "<function_name>",
+    "args":   { "<arg>": <value>, ... },
+    "denominator": { "type": "<kind>", ... },
+    "format": { "type": "<type>", ... }
+  }
+}
+```
+
+| Field | Required | Description |
+|----|----|----|
+| `fun` | **Yes** | Name of the calc function in the evaluation environment. Must be a valid R identifier. |
+| `args` | No | Extra named **literal** arguments passed to `fun` (see below). Cannot include `denom` when `denominator` is set. |
+| `denominator` | No | Declares how the compiler resolves a scalar `denom` argument (see [Denominators](#denominators)). |
+| `format` | No | Format spec that converts the raw value to a display string. When omitted, the raw type is kept (no silent [`as.character()`](https://rdrr.io/r/base/character.html)). |
+
+### `args`
+
+Extra arguments appended to the `fun(variable, ...)` call in the
+generated script. Keys must be valid R identifiers; values are converted
+to R literals. Use `denominator` (not `args`) to pass a group-resolved
+`denom`.
+
+``` json
+"args": {
+  "na.rm":  true,
+  "probs":  0.25,
+  "digits": 2,
+  "method": "type7"
+}
+```
+
+Generated:
+`quantile(AGE, na.rm = TRUE, probs = 0.25, digits = 2, method = "type7")`
+
+| JSON value | R literal |
+|------------|-----------|
+| `true`     | `TRUE`    |
+| `false`    | `FALSE`   |
+| `null`     | `NULL`    |
+| `1.5`      | `1.5`     |
+| `"text"`   | `"text"`  |
+
+### Denominators
+
+Optional `denominator` tells the compiler how to resolve a scalar
+`denom` passed to `fun(variable, denom = ...)`. The calc function owns
+percent math and formatting; the DSL only wires the denominator.
+
+``` r
+
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  list(
+    n = n,
+    pct = if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_
+  )
+}
+```
+
+| `type` | Meaning | Emitted `denom =` |
+|----|----|----|
+| `n` | Rows in the current `groups.by` cell | [`dplyr::n()`](https://dplyr.tidyverse.org/reference/context.html) |
+| `n_distinct` | Distinct values of `variable` in the cell | `dplyr::n_distinct(<variable>)` |
+| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` (`distinct` optional) | `dplyr::first(.kst_dK)` after pre-agg + join |
+| `external` | Object from the eval environment (population / big-N). With `by`, join keyed columns; without `by`, treat as a scalar symbol | `dplyr::first(.kst_dK)` or bare `name` |
+
+**Population % (AE / ADSL N):**
+
+``` json
+"n_pct": {
+  "fun": "count_pct",
+  "denominator": {
+    "type": "external",
+    "name": "adsl_n",
+    "value": "N",
+    "by": ["TRT01P"]
+  },
+  "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+}
+```
+
+Bind `adsl_n` (a tibble with `TRT01P` and `N`) into the eval environment
+before running the compiled script.
+
+**% within TRT when also stratified by SEX (data-derived):**
+
+``` json
+"denominator": {
+  "type": "data_n",
+  "by": ["TRT01P"],
+  "distinct": "USUBJID"
+}
+```
+
+(`groups.by` might be `["TRT01P","SEX"]`; the denom ignores SEX.)
+
+**Within-cell row count:**
+
+``` json
+"denominator": { "type": "n" }
+```
+
+Rules:
+
+- `data_n.by` / `external.by` must be a subset of `groups.by`.
+- `external` with `by` requires `value` (N column name).
+- Setting both `denominator` and `args.denom` is a validation error.
+- Identical denom specs are deduplicated to one prep table / join.
+
+### `format`
+
+Determines how the raw calc result is converted to a display string when
+`format` is present. When `format` is omitted, the raw type is
+preserved.
+
+#### No format spec (default)
+
+``` json
+"n": { "fun": "count" }
+```
+
+Generated: `.value = as.character(.value_raw)`
+
+#### `"type": "sprintf"`
+
+``` json
+"age_mean": {
+  "fun":    "mean",
+  "args":   { "na.rm": true },
+  "format": { "type": "sprintf", "pattern": "%.1f" }
+}
+```
+
+Generated: `.value = sprintf("%.1f", .value_raw)`
+
+#### `"type": "custom"`
+
+Used when the calc function returns a **named list**. The format
+function receives the list element and returns a character string.
+
+``` json
+"mean_sd": {
+  "fun":    "mean_sd",
+  "format": { "type": "custom", "fun": "format_mean_sd" }
+}
+```
+
+Generated: `.value = vapply(.value_raw, format_mean_sd, character(1L))`
+
+The `format.fun` value is looked up in the evaluation environment — it
+is a plain function name, not a list entry.
+
+#### `"type": "template"`
+
+Interpolates a [glue](https://glue.tidyverse.org/) template against the
+named list returned by the calc function. Requires `glue` to be
+installed.
+
+``` json
+"mean_sd": {
+  "fun":    "mean_sd",
+  "format": { "type": "template", "pattern": "{mean} ({sd})" }
+}
+```
+
+Generated:
+`.value = vapply(.value_raw, function(.x) glue::glue_data(.x, "{mean} ({sd})"), character(1L))`
+
+#### `"type": "ksformat"`
+
+Applies a [ksformat](https://github.com/crow16384/ksformat) VALUE format
+to the raw value.
+
+``` json
+"trt": {
+  "fun":    "identity",
+  "format": { "type": "ksformat", "format_name": "trt_fmt" }
+}
+```
+
+Generated: `.value = ksformat::fput(.value_raw, "trt_fmt")`
+
+------------------------------------------------------------------------
+
+## `groups`
+
+Defines how the input data is stratified into output columns.
+
+``` json
+"groups": {
+  "by":                     ["TRT01P", "SEX"],
+  "include_missing_levels": true,
+  "format": {
+    "TRT01P": "trt_format"
+  }
+}
+```
+
+| Field | Required | Description |
+|----|----|----|
+| `by` | **Yes** | Array of column names to group by. Each must be a valid R identifier. |
+| `include_missing_levels` | No | If `true`, emit `group_by(..., .drop = FALSE)` so factor levels with zero observations still appear as rows. Requires the grouping columns to be factors with the desired levels set (use [`kst_apply_metadata()`](https://crow16384.github.io/ksTable/reference/kst_apply_metadata.md)). Default `false`. |
+| `format` | No | Optional documentation map from column name to ksformat format name. **Not applied by [`kst_compile()`](https://crow16384.github.io/ksTable/reference/kst_compile.md).** Pass the same mapping as `format_map` to [`kst_extract_metadata()`](https://crow16384.github.io/ksTable/reference/kst_extract_metadata.md) / [`kst_apply_metadata()`](https://crow16384.github.io/ksTable/reference/kst_apply_metadata.md) before eval. |
+
+### include_missing_levels
+
+To use `include_missing_levels: true`, ensure grouping columns are
+factors with all desired levels before evaluating compiled code:
+
+``` r
+
+library(ksTable)
+
+# Extract factor levels (pass groups.format mapping as format_map when using ksformat)
+meta <- kst_extract_metadata(adsl, "TRT01P",
+                             format_map = list(TRT01P = "trt_format"))
+
+# Re-level the data
+adsl_levelled <- kst_apply_metadata(adsl, meta)
+
+code <- kst_compile(spec)
+env <- new.env(parent = environment())
+env$data <- adsl_levelled
+result <- eval(parse(text = code), envir = env)
+```
+
+------------------------------------------------------------------------
+
+## `layout`
+
+``` json
+"layout": {
+  "row_structure":    "parameter_stat",
+  "column_structure": "groups"
+}
+```
+
+| Field              | Required | Description                             |
+|--------------------|----------|-----------------------------------------|
+| `row_structure`    | **Yes**  | How rows are structured (see below).    |
+| `column_structure` | No       | Currently only `"groups"` is supported. |
+
+### `row_structure` values
+
+| Value | Description | Output rows |
+|----|----|----|
+| `"parameter_stat"` | One row per parameter × statistic combination. | `.param`, `.stat` columns. |
+| `"hierarchical"` | Parent rows + child rows (e.g., SOC → PT). Requires exactly one `nested` parameter. | `.parent`, `.is_child`, `.row_label`, `.stat` columns. |
+
+For `hierarchical`, rows are sorted by `.parent` ascending, then parents
+before children (`.is_child = FALSE < TRUE`), then by `.row_label`
+alphabetically.
+
+------------------------------------------------------------------------
+
+## Output tibble structure
+
+### `parameter_stat`
+
+    .param       character  parameter label
+    .stat        character  statistic key
+    <group1>     character  formatted value for group 1
+    <group2>     character  formatted value for group 2
+    ...
+
+### `hierarchical`
+
+    .parent      character  parent row label (e.g. SOC name)
+    .is_child    logical    FALSE = parent row, TRUE = child row
+    .row_label   character  display label (same as .parent for parent rows)
+    .stat        character  statistic key
+    <group1>     character  formatted value for group 1
+    ...
+
+The `.parent`, `.is_child`, `.row_label`, `.stat` columns are consumed
+by ksTFL to apply indentation and group headers during rendering.
+
+------------------------------------------------------------------------
+
+## Complete example — efficacy table
+
+Statistics using only built-in R functions, all with `na.rm = TRUE`:
+
+``` json
+{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "efficacy",
+    "title": "Change from Baseline in Systolic BP",
+    "parameter": {
+      "chg": { "variable": "CHG", "label": "Change from Baseline (mmHg)" }
+    },
+    "statistics": {
+      "n":      { "fun": "sum",      "args": { "na.rm": true } },
+      "mean":   { "fun": "mean",     "args": { "na.rm": true },
+                  "format": { "type": "sprintf", "pattern": "%.1f" } },
+      "sd":     { "fun": "sd",       "args": { "na.rm": true },
+                  "format": { "type": "sprintf", "pattern": "%.2f" } },
+      "median": { "fun": "median",   "args": { "na.rm": true },
+                  "format": { "type": "sprintf", "pattern": "%.1f" } },
+      "min":    { "fun": "min",      "args": { "na.rm": true },
+                  "format": { "type": "sprintf", "pattern": "%.1f" } },
+      "max":    { "fun": "max",      "args": { "na.rm": true },
+                  "format": { "type": "sprintf", "pattern": "%.1f" } }
+    },
+    "groups": {
+      "by": ["TRT01P", "AVISIT"],
+      "include_missing_levels": false
+    },
+    "layout": {
+      "row_structure":    "parameter_stat",
+      "column_structure": "groups"
+    }
+  }
+}
+```
+
+No user-defined calc or format functions are needed — all six statistics
+use standard R functions with `na.rm = TRUE` from the JSON spec, and
+`sprintf` for display formatting.
+
+------------------------------------------------------------------------
+
+## Security (SR-1)
+
+All JSON fields that appear in generated code are validated before
+emission:
+
+- **Identifier fields** (`variable`, `fun`, `format.fun`, `by` items,
+  `args` keys, `denominator` name/value/variable/distinct/by): validated
+  against `^[A-Za-z.][A-Za-z0-9._]*$`. Any value containing `)`, `;`,
+  spaces, or other metacharacters is rejected with an informative error.
+
+- **String literal fields** (`label`, `pattern`): `\` and `"` are
+  escaped before embedding in generated R string literals.
+
+[`kst_validate_spec()`](https://crow16384.github.io/ksTable/reference/kst_validate_spec.md)
+performs these checks and returns all errors before any code is
+generated.
