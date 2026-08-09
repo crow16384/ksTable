@@ -364,6 +364,115 @@ test_that("denominator lookup via cur_group works from parent env", {
   expect_true(grepl("/200$", result[["Drug A"]]))
 })
 
+# ── Declarative denominator (statistics.*.denominator) ────────────────────────
+
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  list(
+    n = n,
+    pct = if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_
+  )
+}
+
+test_that("denominator external resolves population N via join", {
+  skip_if_not_installed("glue")
+  adsl_n <- data.frame(
+    TRT01P = c("Placebo", "Drug A", "Drug B"),
+    N = c(100L, 200L, 300L),
+    stringsAsFactors = FALSE
+  )
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "n_pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          },
+          "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  result <- run_compiled_table(spec, test_adsl)
+  # 40 subjects per arm in test_adsl; Drug A denom 200 → 20%
+  expect_equal(result[["Drug A"]], "40 (20%)")
+})
+
+test_that("denominator data_n uses subset of groups.by", {
+  skip_if_not_installed("glue")
+  df <- data.frame(
+    USUBJID = c("S1", "S2", "S3", "S4", "S5", "S6"),
+    TRT01P  = c("A", "A", "A", "B", "B", "B"),
+    SEX     = c("F", "F", "M", "F", "M", "M"),
+    FLAG    = c(1L, 1L, 1L, 1L, 1L, 1L),
+    stringsAsFactors = FALSE
+  )
+  # Within TRT A: 3 distinct subjects; F among A: 2 rows → pct = 200/3
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "flag": { "variable": "FLAG", "label": "Flag" } },
+      "statistics": {
+        "n_pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "data_n",
+            "by": ["TRT01P"],
+            "distinct": "USUBJID"
+          },
+          "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+        }
+      },
+      "groups":  { "by": ["TRT01P", "SEX"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  result <- run_compiled_table(spec, df)
+  expect_true("A_F" %in% names(result))
+  expect_match(result[["A_F"]], "^2 \\(66\\.6")
+})
+
+test_that("denominator type n uses dplyr::n() as denom", {
+  skip_if_not_installed("glue")
+  df <- data.frame(
+    TRT01P = c("A", "A", "A", "B", "B"),
+    SEX    = c("F", "F", "M", "F", "M"),
+    stringsAsFactors = FALSE
+  )
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "sex": { "variable": "SEX", "label": "Sex" } },
+      "statistics": {
+        "n_pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "n" },
+          "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  result <- run_compiled_table(spec, df)
+  # Within arm A, n()=3 and all SEX non-missing → 3 (100%)
+  expect_equal(result[["A"]], "3 (100%)")
+})
+
+test_that("stats without denominator still compile and eval", {
+  result <- run_compiled_table(demog_spec, test_adsl)
+  expect_true(is.data.frame(result))
+  expect_true(nrow(result) >= 1L)
+})
+
 # ── include_missing_levels + metadata ─────────────────────────────────────────
 
 test_that("include_missing_levels keeps empty factor levels after metadata", {

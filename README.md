@@ -1,10 +1,11 @@
-# ksTable
+# ksTable <img src="man/figures/logo.png" align="right" alt="ksTable logo" width="120"/>
 
 **JSON DSL to Dplyr Code Generator for Clinical Tables**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![R: ≥ 4.1](https://img.shields.io/badge/R-%E2%89%A5%204.1-blue.svg)](https://www.r-project.org/)
 [![R-CMD-check](https://github.com/crow16384/ksTable/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/crow16384/ksTable/actions/workflows/R-CMD-check.yaml)
+[![pkgdown](https://github.com/crow16384/ksTable/actions/workflows/pkgdown.yaml/badge.svg)](https://crow16384.github.io/ksTable/)
 [![GitHub issues](https://img.shields.io/github/issues/crow16384/ksTable)](https://github.com/crow16384/ksTable/issues)
 
 > **Status**: Usable v0.1.0 compiler — `parameter_stat` and 2-level `hierarchical` layouts
@@ -149,6 +150,14 @@ ksTable/
 3. **Compile ≠ execute** — review/save scripts; run them in an isolated `new.env`.
 4. **Separation of concerns** — ksTable formats; ksTFL lays out; users own stats.
 5. **Injection-safe** — every JSON-derived identifier must match `^[A-Za-z.][A-Za-z0-9._]*$`.
+
+---
+
+## Documentation
+
+Package website: <https://crow16384.github.io/ksTable/>
+
+Locally: `pkgdown::build_site()` (writes to `docs/`).
 
 ---
 

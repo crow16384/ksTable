@@ -471,3 +471,179 @@ test_that("hierarchical emits .drop = FALSE when include_missing_levels is true"
   code <- kst_compile(spec)
   expect_true(grepl("\\.drop = FALSE", code))
 })
+
+# ── Denominator emission ──────────────────────────────────────────────────────
+
+test_that("denominator type n emits dplyr::n()", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "n" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("count_pct\\(AGE, denom = dplyr::n\\(\\)\\)", code))
+  expect_false(grepl("\\.kst_d", code))
+})
+
+test_that("denominator type n_distinct emits n_distinct(var)", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "n_distinct", "variable": "USUBJID" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl(
+    "count_pct\\(AGE, denom = dplyr::n_distinct\\(USUBJID\\)\\)", code))
+})
+
+test_that("denominator data_n emits prep + join + first(.kst_d)", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "sex": { "variable": "SEX", "label": "Sex" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "data_n",
+            "by": ["TRT01P"],
+            "distinct": "USUBJID"
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P", "SEX"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.kst_d1 <- data \\|>", code))
+  expect_true(grepl("group_by\\(TRT01P\\)", code))
+  expect_true(grepl("n_distinct\\(USUBJID\\)", code))
+  expect_true(grepl("left_join\\(\\.kst_d1", code))
+  expect_true(grepl("denom = dplyr::first\\(\\.kst_d1\\)", code))
+})
+
+test_that("denominator external with by emits rename join", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.kst_d1 <- adsl_n \\|>", code))
+  expect_true(grepl("rename\\(\\.kst_d1 = N\\)", code))
+  expect_true(grepl("left_join\\(\\.kst_d1", code))
+  expect_true(grepl("denom = dplyr::first\\(\\.kst_d1\\)", code))
+})
+
+test_that("denominator external scalar emits bare name", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "external", "name": "N_total" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("count_pct\\(AGE, denom = N_total\\)", code))
+  expect_false(grepl("\\.kst_d", code))
+})
+
+test_that("identical denominators share one prep table", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "age": { "variable": "AGE", "label": "Age" },
+        "bmi": { "variable": "BMIBL", "label": "BMI" }
+      },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_equal(lengths(regmatches(code, gregexpr("\\.kst_d1 <-", code))), 1L)
+  expect_false(grepl("\\.kst_d2", code))
+  expect_equal(lengths(regmatches(code, gregexpr("first\\(\\.kst_d1\\)", code))), 2L)
+})
+
+test_that("hierarchical denominator external joins into both chunks", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "soc": {
+          "variable": "AESOC",
+          "nested": { "pt": { "variable": "AEDECOD" } }
+        }
+      },
+      "statistics": {
+        "n_pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "hierarchical" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.kst_d1 <- adsl_n \\|>", code))
+  expect_equal(lengths(regmatches(code, gregexpr("left_join\\(\\.kst_d1", code))), 2L)
+  expect_true(grepl("denom = dplyr::first\\(\\.kst_d1\\)", code))
+})

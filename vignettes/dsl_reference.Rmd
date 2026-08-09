@@ -15,6 +15,10 @@ knitr::opts_chunk$set(
 )
 ```
 
+```{r logo, echo = FALSE, eval = TRUE, out.width = "120px", fig.alt = "ksTable logo"}
+knitr::include_graphics("figures/logo.png")
+```
+
 This document describes every field in the `ksTable` JSON DSL.
 
 ## Top-level structure
@@ -100,6 +104,7 @@ how to compute and display it.
   "<stat_id>": {
     "fun":    "<function_name>",
     "args":   { "<arg>": <value>, ... },
+    "denominator": { "type": "<kind>", ... },
     "format": { "type": "<type>", ... }
   }
 }
@@ -108,13 +113,15 @@ how to compute and display it.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `fun` | **Yes** | Name of the calc function in the evaluation environment. Must be a valid R identifier. |
-| `args` | No | Extra named arguments passed to `fun` (see below). |
-| `format` | No | Format spec that converts the raw value to a display string. Defaults to `as.character()`. |
+| `args` | No | Extra named **literal** arguments passed to `fun` (see below). Cannot include `denom` when `denominator` is set. |
+| `denominator` | No | Declares how the compiler resolves a scalar `denom` argument (see [Denominators](#denominators)). |
+| `format` | No | Format spec that converts the raw value to a display string. When omitted, the raw type is kept (no silent `as.character()`). |
 
 ### `args`
 
 Extra arguments appended to the `fun(variable, ...)` call in the generated script.
 Keys must be valid R identifiers; values are converted to R literals.
+Use `denominator` (not `args`) to pass a group-resolved `denom`.
 
 ```json
 "args": {
@@ -135,11 +142,76 @@ Generated: `quantile(AGE, na.rm = TRUE, probs = 0.25, digits = 2, method = "type
 | `1.5` | `1.5` |
 | `"text"` | `"text"` |
 
+### Denominators
+
+Optional `denominator` tells the compiler how to resolve a scalar `denom`
+passed to `fun(variable, denom = ...)`. The calc function owns percent math
+and formatting; the DSL only wires the denominator.
+
+```r
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  list(
+    n = n,
+    pct = if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_
+  )
+}
+```
+
+| `type` | Meaning | Emitted `denom =` |
+|--------|---------|-------------------|
+| `n` | Rows in the current `groups.by` cell | `dplyr::n()` |
+| `n_distinct` | Distinct values of `variable` in the cell | `dplyr::n_distinct(<variable>)` |
+| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` (`distinct` optional) | `dplyr::first(.kst_dK)` after pre-agg + join |
+| `external` | Object from the eval environment (population / big-N). With `by`, join keyed columns; without `by`, treat as a scalar symbol | `dplyr::first(.kst_dK)` or bare `name` |
+
+**Population % (AE / ADSL N):**
+
+```json
+"n_pct": {
+  "fun": "count_pct",
+  "denominator": {
+    "type": "external",
+    "name": "adsl_n",
+    "value": "N",
+    "by": ["TRT01P"]
+  },
+  "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+}
+```
+
+Bind `adsl_n` (a tibble with `TRT01P` and `N`) into the eval environment before
+running the compiled script.
+
+**% within TRT when also stratified by SEX (data-derived):**
+
+```json
+"denominator": {
+  "type": "data_n",
+  "by": ["TRT01P"],
+  "distinct": "USUBJID"
+}
+```
+
+(`groups.by` might be `["TRT01P","SEX"]`; the denom ignores SEX.)
+
+**Within-cell row count:**
+
+```json
+"denominator": { "type": "n" }
+```
+
+Rules:
+
+- `data_n.by` / `external.by` must be a subset of `groups.by`.
+- `external` with `by` requires `value` (N column name).
+- Setting both `denominator` and `args.denom` is a validation error.
+- Identical denom specs are deduplicated to one prep table / join.
+
 ### `format`
 
-Determines how `.value_raw` (the raw output of `fun`) is converted to the
-display string `.value`. Every statistic has a formatter; the default when
-`format` is omitted is `as.character()`.
+Determines how the raw calc result is converted to a display string when
+`format` is present. When `format` is omitted, the raw type is preserved.
 
 #### No format spec (default)
 
@@ -354,7 +426,8 @@ for display formatting.
 
 All JSON fields that appear in generated code are validated before emission:
 
-* **Identifier fields** (`variable`, `fun`, `format.fun`, `by` items, `args` keys):
+* **Identifier fields** (`variable`, `fun`, `format.fun`, `by` items, `args` keys,
+  `denominator` name/value/variable/distinct/by):
   validated against `^[A-Za-z.][A-Za-z0-9._]*$`. Any value containing `)`,
   `;`, spaces, or other metacharacters is rejected with an informative error.
 

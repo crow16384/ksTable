@@ -9,3 +9,6 @@
 ^LICENSE\.md$
 ^\.github$
 ^\.serena$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$

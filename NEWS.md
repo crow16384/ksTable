@@ -30,6 +30,13 @@ First usable release. Core DSL-to-dplyr compiler for two layouts.
 * Mixing character formats with unformatted stats coerces the unformatted
   siblings only so `bind_rows` can build `.value`
 
+### Denominators
+
+* Optional `statistics.*.denominator` (`n`, `n_distinct`, `data_n`, `external`).
+* Compiler resolves scalar `denom=` (prep `.kst_dK` + join when needed); calc
+  function owns percent math. Rejects `args.denom` when `denominator` is set;
+  `by` must be a subset of `groups.by`.
+
 ### Hardening (0.1 honesty pass)
 
 * Validate-before-compile; fail on empty chunks / short `labels` padding;
@@ -40,6 +47,8 @@ First usable release. Core DSL-to-dplyr compiler for two layouts.
 
 * `R/` — `compiler.R`, `compile.R`, `validate.R`, `metadata.R`
 * `inst/schema/table_spec_v1.json`, `inst/examples/*.json`
+* `man/figures/logo.png` — package logo (variants in `logo-variants/`)
 * `demo/` — demography, laboratory, adverse_events, ksformat_integration
 * `vignettes/` — getting_started, dsl_reference
-* `tests/testthat/` — 103 tests (validate, compile, generate, metadata)
+* `tests/testthat/` — validate, compile, generate, metadata (incl. denominators)
+* pkgdown site — `_pkgdown.yml`, `.github/workflows/pkgdown.yaml`

@@ -98,6 +98,129 @@ gen_format_expr <- function(s, raw_sym = ".value_raw") {
   )
 }
 
+# ── Denominator helpers (statistics.*.denominator → denom = ...) ───────────
+
+# Stable key for deduplicating identical denominator specs.
+denom_fingerprint <- function(d) {
+  if (is.null(d)) return(NULL)
+  paste(
+    c(
+      d$type %||% "",
+      d$variable %||% "",
+      paste(unlist(d$by) %||% character(0), collapse = ","),
+      d$distinct %||% "",
+      d$name %||% "",
+      d$value %||% ""
+    ),
+    collapse = "|"
+  )
+}
+
+# TRUE when the denom needs a pre-agg / rename table joined onto `data`.
+denom_needs_prep <- function(d) {
+  if (is.null(d)) return(FALSE)
+  type <- d$type %||% ""
+  if (identical(type, "data_n")) return(TRUE)
+  if (identical(type, "external") && !is.null(d$by) && length(d$by) > 0L)
+    return(TRUE)
+  FALSE
+}
+
+# Collect unique prep denoms from plan rows; assign .kst_d1, .kst_d2, ...
+# Returns list of list(col, spec, by). Also annotates plan[[i]]$denom_col.
+collect_denom_preps <- function(plan) {
+  preps <- list()
+  key_to_col <- list()
+  next_i <- 0L
+
+  for (i in seq_along(plan)) {
+    d <- plan[[i]]$denominator
+    if (!denom_needs_prep(d)) next
+    key <- denom_fingerprint(d)
+    if (!is.null(key_to_col[[key]])) {
+      plan[[i]]$denom_col <- key_to_col[[key]]
+      next
+    }
+    next_i <- next_i + 1L
+    col <- paste0(".kst_d", next_i)
+    key_to_col[[key]] <- col
+    plan[[i]]$denom_col <- col
+    by <- vapply(unlist(d$by), assert_id, character(1L),
+                 field = "denominator.by")
+    preps[[length(preps) + 1L]] <- list(col = col, spec = d, by = by)
+  }
+
+  list(plan = plan, preps = preps)
+}
+
+# Emit R lines that build one prep tibble named `col`.
+gen_denom_prep_lines <- function(col, d, by) {
+  type <- d$type %||% ""
+  if (identical(type, "data_n")) {
+    agg <- if (!is.null(d$distinct)) {
+      paste0("dplyr::n_distinct(",
+             assert_id(d$distinct, "denominator.distinct"), ")")
+    } else {
+      "dplyr::n()"
+    }
+    return(c(
+      paste0(col, " <- data |>"),
+      paste0("  dplyr::group_by(", paste(by, collapse = ", "), ") |>"),
+      paste0("  dplyr::summarize(", col, " = ", agg, ', .groups = "drop")'),
+      ""
+    ))
+  }
+  if (identical(type, "external")) {
+    name  <- assert_id(d$name, "denominator.name")
+    value <- assert_id(d$value, "denominator.value")
+    return(c(
+      paste0(col, " <- ", name, " |>"),
+      paste0("  dplyr::select(", paste(c(by, value), collapse = ", "), ") |>"),
+      paste0("  dplyr::rename(", col, " = ", value, ")"),
+      ""
+    ))
+  }
+  stop("Internal error: unexpected prep denom type '", type, "'.", call. = FALSE)
+}
+
+# Emit left_join pipe steps for all prep tables (before group_by).
+gen_denom_join_lines <- function(preps) {
+  if (length(preps) == 0L) return(character(0))
+  vapply(preps, function(p) {
+    by_lit <- paste(vapply(p$by, r_str, character(1L)), collapse = ", ")
+    paste0("  dplyr::left_join(", p$col, ", by = c(", by_lit, ")) |>")
+  }, character(1L))
+}
+
+# R expression for denom= inside summarize (or NULL if no denominator).
+gen_denom_expr <- function(d, denom_col = NULL) {
+  if (is.null(d)) return(NULL)
+  type <- d$type %||% ""
+  switch(type,
+    n = "dplyr::n()",
+    n_distinct = paste0(
+      "dplyr::n_distinct(",
+      assert_id(d$variable, "denominator.variable"), ")"
+    ),
+    data_n = paste0("dplyr::first(", denom_col, ")"),
+    external = {
+      if (!is.null(d$by) && length(d$by) > 0L)
+        paste0("dplyr::first(", denom_col, ")")
+      else
+        assert_id(d$name, "denominator.name")
+    },
+    stop("Unsupported denominator.type: '", type, "'", call. = FALSE)
+  )
+}
+
+# Append ", denom = <expr>" (and any literal args) for a calc call.
+format_call_extras <- function(args, denom_expr = NULL) {
+  paste0(
+    if (!is.null(denom_expr)) paste0(", denom = ", denom_expr) else "",
+    format_args(args)
+  )
+}
+
 # Expand parameter_stat into ordered calc rows (one per param × var × stat).
 # Each row becomes a temporary column `.cN` in a single summarize().
 build_calc_plan <- function(ts) {
@@ -147,6 +270,8 @@ build_calc_plan <- function(ts) {
           args        = s$args,
           format      = s$format,
           list_wrap   = needs_list_wrap(s$format),
+          denominator = s$denominator,
+          denom_col   = NULL,
           stat_spec   = s
         )
       }
@@ -178,13 +303,22 @@ gen_parameter_stat <- function(ts) {
          "'statistics' are non-empty and that 'apply_to' does not exclude ",
          "every parameter.", call. = FALSE)
 
+  collected <- collect_denom_preps(plan)
+  plan  <- collected$plan
+  preps <- collected$preps
+
+  # Prep tables for data_n / keyed external denoms
+  prep_lines <- unlist(lapply(preps, function(p)
+    gen_denom_prep_lines(p$col, p$spec, p$by)), use.names = FALSE)
+
   cids <- vapply(plan, `[[`, character(1L), "cid")
 
   # summarize: one expression per plan row (raw values only)
   sum_lines <- character(length(plan))
   for (i in seq_along(plan)) {
     row   <- plan[[i]]
-    extra <- format_args(row$args)
+    dexpr <- gen_denom_expr(row$denominator, row$denom_col)
+    extra <- format_call_extras(row$args, dexpr)
     raw   <- if (row$list_wrap) {
       paste0("list(", row$fun, "(", row$var, extra, "))")
     } else {
@@ -237,7 +371,9 @@ gen_parameter_stat <- function(ts) {
     )
   }
 
-  c(".raw <- data |>",
+  c(prep_lines,
+    ".raw <- data |>",
+    gen_denom_join_lines(preps),
     gen_group_by(gvars, drop = !inc_miss),
     "  dplyr::summarize(",
     sum_lines,
@@ -305,16 +441,32 @@ gen_hierarchical <- function(ts) {
   fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
   skey <- r_str(sn)
 
-  extra      <- format_args(s$args)
+  # Denom prep (same field as parameter_stat; shared across parent/child chunks)
+  denom_col <- NULL
+  preps <- list()
+  if (denom_needs_prep(s$denominator)) {
+    denom_col <- ".kst_d1"
+    by <- vapply(unlist(s$denominator$by), assert_id, character(1L),
+                 field = "denominator.by")
+    preps <- list(list(col = denom_col, spec = s$denominator, by = by))
+  }
+  prep_lines <- unlist(lapply(preps, function(p)
+    gen_denom_prep_lines(p$col, p$spec, p$by)), use.names = FALSE)
+  join_lines <- gen_denom_join_lines(preps)
+
+  dexpr      <- gen_denom_expr(s$denominator, denom_col)
+  extra      <- format_call_extras(s$args, dexpr)
   raw_expr_p <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", parent_var, extra, "))") else paste0(fun, "(", parent_var, extra, ")")
   raw_expr_c <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", child_var,  extra, "))") else paste0(fun, "(", child_var,  extra, ")")
   fmt_expr   <- gen_format_expr(s)
   # Keep raw type when no format is specified.
   value_expr <- if (is.null(fmt_expr)) ".value_raw" else fmt_expr
 
-  c(".chunks <- list()", "",
+  c(prep_lines,
+    ".chunks <- list()", "",
     paste0("# Parent level: ", parent_var),
     ".chunks[[1L]] <- data |>",
+    join_lines,
     gen_group_by(c(gvars, parent_var), drop = !inc_miss),
     "  dplyr::summarize(",
     paste0("    .value_raw  = ", raw_expr_p, ","),
@@ -331,6 +483,7 @@ gen_hierarchical <- function(ts) {
     "",
     paste0("# Child level: ", child_var),
     ".chunks[[2L]] <- data |>",
+    join_lines,
     gen_group_by(c(gvars, parent_var, child_var), drop = !inc_miss),
     "  dplyr::summarize(",
     paste0("    .value_raw  = ", raw_expr_c, ","),

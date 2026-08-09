@@ -181,6 +181,64 @@ If `labels` is shorter than `variables`, missing labels default to the variable 
 
 ---
 
+## Example 6: Percent denominators
+
+The DSL declares **how** to resolve `denom`; your calc function still computes
+`n` / `pct` (and formatting via `format`).
+
+**External population N (ADSL big-N):**
+
+```json
+"statistics": {
+  "n_pct": {
+    "fun": "count_pct",
+    "denominator": {
+      "type": "external",
+      "name": "adsl_n",
+      "value": "N",
+      "by": ["TRT01P"]
+    },
+    "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+  }
+}
+```
+
+```r
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  list(n = n, pct = if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_)
+}
+adsl_n <- dplyr::count(adsl, TRT01P, name = "N")
+
+code <- kst_compile(spec)
+env  <- new.env(parent = environment())
+env$data <- adae
+env$adsl_n <- adsl_n
+eval(parse(text = code), envir = env)
+```
+
+**Data-derived denom over a subset of `groups.by`:**
+
+```json
+"groups": { "by": ["TRT01P", "SEX"] },
+"statistics": {
+  "n_pct": {
+    "fun": "count_pct",
+    "denominator": {
+      "type": "data_n",
+      "by": ["TRT01P"],
+      "distinct": "USUBJID"
+    },
+    "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+  }
+}
+```
+
+Other kinds: `{ "type": "n" }` (cell row count) and
+`{ "type": "n_distinct", "variable": "USUBJID" }`.
+
+---
+
 ## Calc / format functions (environment lookup)
 
 Define functions in the parent of the eval environment. There is no

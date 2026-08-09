@@ -14,6 +14,10 @@ knitr::opts_chunk$set(
 )
 ```
 
+```{r logo, echo = FALSE, out.width = "120px", fig.alt = "ksTable logo"}
+knitr::include_graphics("figures/logo.png")
+```
+
 ## Overview
 
 **ksTable** reads a declarative JSON table specification and generates a plain,
@@ -57,8 +61,12 @@ own environment.
 ### Calc functions
 
 Referenced by the `"fun"` field in a statistic.  Receive a **column vector**
-(one group's data), return a raw **numeric** or **named list**.
-*No string formatting here.*
+(one group's data) as the first argument; return a raw **numeric** or
+**named list**. *No string formatting here.*
+
+When the statistic declares `"denominator"`, the compiler also passes a
+scalar `denom = ...` for the current group (see
+[Percentages with denominators](#percentages-with-denominators)).
 
 ```{r calc-fns}
 count   <- function(data) sum(!is.na(data))          # → integer
@@ -69,21 +77,33 @@ mean_sd <- function(data) list(                       # → named list
 )
 
 count_n <- function(data) length(data)               # → integer
+
+# Used with statistics.*.denominator (compiler supplies denom=)
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  list(
+    n   = n,
+    pct = if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom
+          else NA_real_
+  )
+}
 ```
 
 ### Format functions
 
 Referenced by `"format": { "type": "custom", "fun": "..." }`.  Receive the
 raw value from the corresponding calc function, return a single
-**character** string.
+**character** string. Format is applied **only** when `"format"` is present
+in the JSON; otherwise the raw type is kept.
 
 ```{r format-fns}
 format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 ```
 
 Built-in R functions (`median`, `sum`, `mean`, …) can be used directly as
-calc functions.  Extra arguments — such as `na.rm = TRUE` — are specified in
-the JSON spec via the optional `"args"` field (see below).
+calc functions.  Extra **literal** arguments — such as `na.rm = TRUE` — go
+in the optional `"args"` field. Use `"denominator"` (not `"args"`) to wire
+a group-resolved `denom`.
 
 ---
 
@@ -247,6 +267,77 @@ to apply indentation and header formatting during rendering.
 
 ---
 
+## Percentages with denominators
+
+Percentages are a **hybrid** contract: the JSON declares *how* to resolve
+`denom`, and your calc function still computes `n` / `pct` (and formatting
+via `"format"`).
+
+Common kinds:
+
+| `denominator.type` | Meaning |
+|--------------------|---------|
+| `n` | Rows in the current `groups.by` cell (`dplyr::n()`) |
+| `n_distinct` | Distinct values of a column in the cell |
+| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` |
+| `external` | Population / big-N object from the eval environment |
+
+### `n (pct%)` of ADSL N (`external`)
+
+Build a population table, declare `denominator.type = "external"`, and bind
+it into the eval environment under the name given in `"name"`:
+
+```{r ae-denom-prep}
+adsl_n <- dplyr::count(adsl, TRT01P, name = "N")
+adsl_n
+```
+
+```{r demog-pct-json}
+pct_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "demographics_age_pct",
+    "title": "Age: n and % of treatment arm N",
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "external",
+          "name": "adsl_n",
+          "value": "N",
+          "by": ["TRT01P"]
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+```
+
+```{r generate-demog-pct}
+pct_code <- kst_compile(pct_spec)
+cat(pct_code)   # shows prep join + denom = dplyr::first(.kst_d1)
+
+pct_env <- new.env(parent = environment())
+pct_env$data   <- adsl
+pct_env$adsl_n <- adsl_n
+pct_result <- eval(parse(text = pct_code), envir = pct_env)
+print(pct_result)
+```
+
+The same `denominator` field works on hierarchical statistics (for example AE
+counts over ADSL N). For `%` within treatment when also stratified by sex,
+use `data_n` over a subset of `groups.by` (e.g. `"by": ["TRT01P"]` with
+`"distinct": "USUBJID"` while `groups.by` is `["TRT01P","SEX"]`). See
+`vignette("dsl_reference")` for the full reference.
+
+---
+
 ## Step-through debugging
 
 Run the compiled script in `new.env(parent = environment())`.
@@ -262,16 +353,15 @@ env$data  <- adsl
 # Run the whole script at once
 result <- eval(parse(text = code), envir = env)
 
-# Or paste individual lines into the console to step through:
-#   eval(parse(text = ".chunks <- list()"), envir = env)
-#   eval(parse(text = ".chunks[[1L]] <- data |> ..."), envir = env)
-#   env$.chunks[[1L]]   # inspect first chunk
+# Or paste individual lines into the console to step through the pipeline:
+#   eval(parse(text = ".raw <- data |> ..."), envir = env)
+#   env$.raw
 
-# All intermediates are available for inspection
+# Intermediates for parameter_stat: .raw, .long, data
+# (hierarchical uses .chunks instead of a single .raw)
 ls(env, all.names = TRUE)
-# → ".chunks"  ".long"  "data"
 
-env$.long   # the assembled long-format table before pivoting
+env$.long   # long-format table before pivoting
 ```
 
 ---
@@ -357,9 +447,11 @@ system.time(for (i in 1:1000L) kst_compile(demog_spec))
 
 ## Next steps
 
-* See `vignette("dsl_reference")` for the complete JSON schema reference.
+* See `vignette("dsl_reference")` for the complete JSON schema reference,
+  including the **Denominators** section.
 * The generated script can be saved to a `.R` file and used independently of
   the package — useful for audit trails in regulated environments.
 * Set the parent of your eval environment (for example,
   `new.env(parent = environment())`) when you need precise control over
-  function lookup scope.
+  function lookup scope. Bind external population tables (e.g. `adsl_n`) in
+  that environment when using `denominator.type = "external"`.

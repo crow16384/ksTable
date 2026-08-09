@@ -137,10 +137,13 @@
         "fun": {
           "type": "string",
           "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
-          "description": "Name of the calc function resolved from the evaluation environment. Can be any R function: a user-defined function, a base-R function ('median', 'mean', 'sd'), or any function from an attached package. The function receives a column vector for one group and should return either a scalar (numeric, integer, character) or a named list. Must be a valid R identifier (SR-1)."
+          "description": "Name of the calc function resolved from the evaluation environment. Receives the analysis column for one group as the first argument. When 'denominator' is set, the compiler also passes denom = <resolved scalar>. May return a scalar or a named list (e.g. list(n=..., pct=...)). Must be a valid R identifier (SR-1)."
         },
         "args": {
           "$ref": "#/definitions/function_args"
+        },
+        "denominator": {
+          "$ref": "#/definitions/denominator_spec"
         },
         "apply_to": {
           "type": "array",
@@ -155,6 +158,63 @@
           "$ref": "#/definitions/format_spec"
         }
       }
+    },
+
+    "denominator_spec": {
+      "type": "object",
+      "description": "Declares how the compiler resolves the scalar 'denom' argument passed to fun(variable, denom = ...). The calc function owns percent math; the DSL only wires the denominator.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Denominator kind.\n\n'n': rows in the current groups.by cell (dplyr::n()).\n\n'n_distinct': distinct values of 'variable' in the current cell.\n\n'data_n': pre-aggregate analysis data over a subset of groups.by (optional distinct), join back, use dplyr::first(.kst_dK).\n\n'external': object from the evaluation environment (population / big-N). With 'by', join/lookup keyed columns; without 'by', treat as a scalar symbol.",
+          "enum": ["n", "n_distinct", "data_n", "external"]
+        },
+        "variable": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "For type 'n_distinct': column whose distinct count is the denominator."
+        },
+        "by": {
+          "type": "array",
+          "description": "For 'data_n' and 'external': key columns used to aggregate or look up N. Must be a subset of groups.by.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z.][A-Za-z0-9._]*$"
+          }
+        },
+        "distinct": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "For type 'data_n': optional column for n_distinct during pre-aggregation. If omitted, row count (dplyr::n()) is used."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "For type 'external': name of the object in the evaluation environment (tibble or scalar)."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z.][A-Za-z0-9._]*$",
+          "description": "For type 'external' with a tibble: column holding N. Ignored for scalar externals."
+        }
+      },
+      "allOf": [
+        {
+          "if":   { "properties": { "type": { "const": "n_distinct" } }, "required": ["type"] },
+          "then": { "required": ["variable"] }
+        },
+        {
+          "if":   { "properties": { "type": { "const": "data_n" } }, "required": ["type"] },
+          "then": { "required": ["by"] }
+        },
+        {
+          "if":   { "properties": { "type": { "const": "external" } }, "required": ["type"] },
+          "then": { "required": ["name"] }
+        }
+      ]
     },
 
     "function_args": {

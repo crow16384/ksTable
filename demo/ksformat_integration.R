@@ -1,12 +1,12 @@
 ### ksTable demo: ksformat Integration
 ###
 ### Demographics table: Age, BMI (continuous) and Sex (categorical) in ONE
-### JSON spec using three new DSL features:
+### JSON spec using DSL features:
 ###
 ###  1. apply_to  -- bind each statistic to specific parameter IDs (no blanks)
 ###  2. variables -- array of columns sharing the same statistics (no repetition)
-###  3. extra_data -- any external data for calc functions (denominators,
-###                  models, lookups...) accessed via dplyr::cur_group()
+###  3. denominator -- declarative denom resolution (external big-N / data_n / n)
+###     (legacy: calc functions may still close over env objects + cur_group())
 ###
 ### Requires: remotes::install_github("crow16384/ksformat")
 
@@ -255,37 +255,62 @@ v <- kst_validate_spec(demographics_spec)
 if (!v$valid) stop(paste(v$errors, collapse = "\n"))
 cat("Spec validation: PASS\n\n")
 
-## -- 6. FEATURE 3: extra_data - any external data for calc functions --------
+## -- 6. FEATURE 3: denominators (declarative + legacy cur_group) -------------
 ##
-## extra_data is a general-purpose side-channel: a named list of arbitrary
-## objects bound by name into the eval environment. Calc functions decide how
-## to use each object - a denominator tibble here, but it could equally be a
-## fitted model, a lookup table, reference ranges, or configuration.
+## Preferred: JSON `statistics.*.denominator` with type "external" (or n /
+## n_distinct / data_n). The compiler joins / inlines denom and calls
+## fun(var, denom = ...). Bind population tables (e.g. adsl_n) in the eval env.
 ##
-## For AE percentages the denominator is the number of subjects per arm (from
-## ADSL), NOT the number of events in the AE group. The calc function reads the
-## external tibble by name and resolves the current arm via dplyr::cur_group():
-##
-##   n_pct_ae <- function(data) {
-##     arm <- as.list(dplyr::cur_group())$TRT01P
-##     N   <- denom$N[denom$TRT01P == arm]      # `denom` from extra_data
-##     list(n = length(unique(data)), pct = 100 * length(unique(data)) / N)
-##   }
-##
-## Here we compute sex % relative to arm N from ADSL to illustrate the pattern.
+## Legacy: calc functions may still close over env objects and use
+## dplyr::cur_group() when you need custom multi-row cell logic (sex breakdown
+## below). Prefer `denominator` for simple n (pct%) cells.
 
 n_by_arm <- adsl_fmt |>
   dplyr::count(TRT01P, name = "N") |>
   dplyr::filter(!is.na(TRT01P))
 
-cat("External data (arm N from ADSL) passed via extra_data:\n")
+cat("External population N (bind as adsl_n for denominator.type=external):\n")
 print(n_by_arm)
 cat("\n")
+
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  list(
+    n = n,
+    pct = if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_
+  )
+}
+
+spec_denom <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "external",
+          "name": "adsl_n",
+          "value": "N",
+          "by": ["TRT01P"]
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": {
+      "by": ["TRT01P"],
+      "format": { "TRT01P": "trt_fmt" }
+    },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
 
 sex_pct_ext <- function(data) {
   if (is.numeric(data)) return(NULL)
   arm <- as.list(dplyr::cur_group())$TRT01P
-  N   <- denom$N[denom$TRT01P == arm]     # `denom` bound from extra_data
+  N   <- denom$N[denom$TRT01P == arm]     # legacy: denom bound from parent env
   if (length(N) == 0L || is.na(N)) N <- 1L
   data.frame(SEX = as.character(data), stringsAsFactors = FALSE) |>
     dplyr::filter(!is.na(SEX)) |>
@@ -332,7 +357,15 @@ result <- dplyr::bind_rows(
 )
 print(result, n = Inf, width = 140)
 
-cat("\n-- Optional manual eval: sex rows with external denominator -----------\n")
+cat("\n-- Declarative denominator (external adsl_n → denom=) -----------------\n")
+code_denom <- kst_compile(spec_denom)
+cat(code_denom, "\n\n")
+env_denom <- new.env(parent = environment())
+env_denom$data <- adsl_fmt
+env_denom$adsl_n <- n_by_arm
+print(eval(parse(text = code_denom), envir = env_denom), width = 140)
+
+cat("\n-- Optional manual eval: sex rows with legacy cur_group denominator ---\n")
 code_ext <- kst_compile(spec_ext)
 env_ext <- new.env(parent = environment())
 env_ext$data <- adsl_fmt
@@ -374,5 +407,9 @@ cat(paste(head(readLines(tmp), 10L), collapse = "\n"), "\n")
 tmp_ext <- tempfile(fileext = ".R")
 kst_save(spec_ext, tmp_ext)
 cat("\n-- Saved external-denominator script to: ", tmp_ext, "\n", sep = "")
+
+tmp_denom <- tempfile(fileext = ".R")
+kst_save(spec_denom, tmp_denom)
+cat("-- Saved declarative-denominator script to: ", tmp_denom, "\n", sep = "")
 
 fclear()
