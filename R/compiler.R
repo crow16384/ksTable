@@ -73,59 +73,45 @@ needs_list_wrap <- function(fmt) {
   !is.null(fmt) && (fmt$type %||% "") %in% c("custom", "template")
 }
 
-# Generate the format expression for the .value column.
-# Every statistic has a formatter; the implicit default is as.character().
-# All formatters return character, so bind_rows() across chunks is type-safe.
-gen_format_expr <- function(s) {
+# TRUE when the statistic has an explicit format block in the JSON.
+has_format <- function(s) !is.null(s$format) && !is.null(s$format$type)
+
+# Generate a format expression for a raw-value symbol, or NULL when no format
+# was specified (caller keeps the raw value — no silent as.character()).
+gen_format_expr <- function(s, raw_sym = ".value_raw") {
+  if (!has_format(s)) return(NULL)
   fmt <- s$format
-  if (is.null(fmt)) return("as.character(.value_raw)")   # default formatter
   switch(fmt$type %||% "asis",
-    sprintf  = sprintf('sprintf(%s, .value_raw)', r_str(fmt$pattern %||% "%s")),
+    sprintf  = sprintf('sprintf(%s, %s)', r_str(fmt$pattern %||% "%s"), raw_sym),
     custom   = {
       f <- assert_id(fmt$fun, "format.fun")
-      sprintf('vapply(.value_raw, %s, character(1L))', f)
+      sprintf('vapply(%s, %s, character(1L))', raw_sym, f)
     },
     template = {
       sprintf(
-        'vapply(.value_raw, function(.x) glue::glue_data(.x, %s), character(1L))',
-        r_str(fmt$pattern %||% "{value}")
+        'vapply(%s, function(.x) glue::glue_data(.x, %s), character(1L))',
+        raw_sym, r_str(fmt$pattern %||% "{value}")
       )
     },
-    ksformat = sprintf('ksformat::fput(.value_raw, %s)', r_str(fmt$format_name %||% "")),
-    "as.character(.value_raw)"  # safe default for unknown type
+    ksformat = sprintf('ksformat::fput(%s, %s)', raw_sym, r_str(fmt$format_name %||% "")),
+    NULL
   )
 }
 
-# ── Layout generators ──────────────────────────────────────────────────────
-
-# parameter_stat: rows = parameter × statistic, columns = group levels.
-gen_parameter_stat <- function(ts) {
-  params   <- ts$parameter
-  stats    <- ts$statistics
-  by       <- ts$groups$by
-  if (is.null(by) || length(by) == 0L)
-    stop("groups.by must be a non-empty array of column names.", call. = FALSE)
-  gvars    <- vapply(by, assert_id, character(1L), field = "groups$by")
-  inc_miss <- isTRUE(ts$groups$include_missing_levels)
-
-  if (is.null(params) || length(params) == 0L)
-    stop("parameter map must be non-empty.", call. = FALSE)
-  if (is.null(stats) || length(stats) == 0L)
-    stop("statistics map must be non-empty.", call. = FALSE)
-
-  lines <- c(".chunks <- list()", "")
-  idx   <- 1L
+# Expand parameter_stat into ordered calc rows (one per param × var × stat).
+# Each row becomes a temporary column `.cN` in a single summarize().
+build_calc_plan <- function(ts) {
+  params <- ts$parameter
+  stats  <- ts$statistics
+  plan   <- list()
+  idx    <- 0L
 
   for (pn in names(params)) {
-    p   <- params[[pn]]
+    p <- params[[pn]]
 
     # Support "variables" (array) as well as the legacy "variable" (scalar).
-    # When an array is given each element expands into its own row block,
-    # using the corresponding "labels" entry (or the variable name itself).
-    # Use [[]] for field access to prevent $-partial-matching of "variable" -> "variables".
+    # Use [[]] to prevent $-partial-matching of "variable" -> "variables".
     vars_raw <- p[["variables"]] %||% list(p[["variable"]])
-    # labels: pad short arrays with the variable name (schema contract).
-    # Single-variable form uses "label", defaulting to the variable name.
     labels_src <- p[["labels"]]
     if (is.null(labels_src)) {
       labels_raw <- lapply(vars_raw, function(v) p[["label"]] %||% v)
@@ -140,61 +126,144 @@ gen_parameter_stat <- function(ts) {
     }
 
     for (vi in seq_along(vars_raw)) {
-      var <- assert_id(vars_raw[[vi]],  paste0("parameter.", pn, ".variable"))
-      lbl <- r_str(labels_raw[[vi]] %||% var)
+      var <- assert_id(vars_raw[[vi]], paste0("parameter.", pn, ".variable"))
+      lbl <- as.character(labels_raw[[vi]] %||% var)
 
       for (sn in names(stats)) {
         s <- stats[[sn]]
 
-        # apply_to: if present, skip this stat for parameters not listed.
-        # Accepts parameter IDs OR variable names so either convention works.
+        # apply_to: skip this stat for parameters not listed.
         apply_to <- unlist(s$apply_to)
         if (!is.null(apply_to) && length(apply_to) > 0L &&
             !pn %in% apply_to && !vars_raw[[vi]] %in% apply_to) next
 
-        fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
-        skey <- r_str(sn)
+        idx <- idx + 1L
+        plan[[idx]] <- list(
+          cid         = paste0(".c", idx),
+          param_label = lbl,
+          stat_key    = sn,
+          var         = var,
+          fun         = assert_id(s$fun, paste0("statistics.", sn, ".fun")),
+          args        = s$args,
+          format      = s$format,
+          list_wrap   = needs_list_wrap(s$format),
+          stat_spec   = s
+        )
+      }
+    }
+  }
 
-        extra    <- format_args(s$args)
-        raw_expr <- if (needs_list_wrap(s$format)) {
-          paste0("list(", fun, "(", var, extra, "))")
-        } else {
-          paste0(fun, "(", var, extra, ")")
-        }
-        fmt_expr <- gen_format_expr(s)
+  plan
+}
 
-        lines <- c(lines,
-          paste0(".chunks[[", idx, "L]] <- data |>"),
-          gen_group_by(gvars, drop = !inc_miss),
-          "  dplyr::summarize(",
-          paste0("    .value_raw  = ", raw_expr, ","),
-          '    .groups     = "drop"',
-          "  ) |>",
-          "  dplyr::mutate(",
-          paste0("    .value      = ", fmt_expr, ","),
-          paste0("    .param      = ", lbl, ","),
-          paste0("    .stat = ", skey, ","),
-          "    .value_raw  = NULL",
-        "  )",
-        ""
-      )
-      idx <- idx + 1L
-      }  # sn
-    }  # vi
-  }  # pn
+# ── Layout generators ──────────────────────────────────────────────────────
 
-  if (idx == 1L)
+# parameter_stat: single group_by + summarize, optional format mutate with
+# .keep = "none", pivot_longer to (.param, .stat), pivot_wider on groups.
+gen_parameter_stat <- function(ts) {
+  by <- ts$groups$by
+  if (is.null(by) || length(by) == 0L)
+    stop("groups.by must be a non-empty array of column names.", call. = FALSE)
+  gvars    <- vapply(by, assert_id, character(1L), field = "groups$by")
+  inc_miss <- isTRUE(ts$groups$include_missing_levels)
+
+  if (is.null(ts$parameter) || length(ts$parameter) == 0L)
+    stop("parameter map must be non-empty.", call. = FALSE)
+  if (is.null(ts$statistics) || length(ts$statistics) == 0L)
+    stop("statistics map must be non-empty.", call. = FALSE)
+
+  plan <- build_calc_plan(ts)
+  if (length(plan) == 0L)
     stop("No statistics chunks generated. Check that 'parameter' and ",
          "'statistics' are non-empty and that 'apply_to' does not exclude ",
          "every parameter.", call. = FALSE)
 
-  c(lines,
-    ".long <- dplyr::bind_rows(.chunks)",
+  cids <- vapply(plan, `[[`, character(1L), "cid")
+
+  # summarize: one expression per plan row (raw values only)
+  sum_lines <- character(length(plan))
+  for (i in seq_along(plan)) {
+    row   <- plan[[i]]
+    extra <- format_args(row$args)
+    raw   <- if (row$list_wrap) {
+      paste0("list(", row$fun, "(", row$var, extra, "))")
+    } else {
+      paste0(row$fun, "(", row$var, extra, ")")
+    }
+    sum_lines[[i]] <- paste0("    ", row$cid, " = ", raw, ",")
+  }
+
+  gvars_csv <- paste(gvars, collapse = ", ")
+
+  fmt_exprs <- lapply(plan, function(row)
+    gen_format_expr(row$stat_spec, raw_sym = row$cid))
+  needs_format <- any(!vapply(fmt_exprs, is.null, logical(1L)))
+
+  # Named-vector maps from temp ids → labels / stat keys
+  param_map <- paste0(
+    "c(",
+    paste(vapply(plan, function(row) {
+      paste0(r_str(row$cid), " = ", r_str(row$param_label))
+    }, character(1L)), collapse = ", "),
+    ")"
+  )
+  stat_map <- paste0(
+    "c(",
+    paste(vapply(plan, function(row) {
+      paste0(r_str(row$cid), " = ", r_str(row$stat_key))
+    }, character(1L)), collapse = ", "),
+    ")"
+  )
+
+  # Optional: one mutate(.keep = "none") to format (and unify types if needed)
+  format_block <- NULL
+  if (needs_format) {
+    keep_gvars <- vapply(gvars, function(g) paste0("    ", g, " = ", g, ","),
+                         character(1L))
+    fmt_lines <- character(length(plan))
+    for (i in seq_along(plan)) {
+      row <- plan[[i]]
+      expr <- fmt_exprs[[i]]
+      if (is.null(expr))
+        expr <- paste0("as.character(", row$cid, ")")
+      fmt_lines[[i]] <- paste0("    ", row$cid, " = ", expr, ",")
+    }
+    format_block <- c(
+      "  dplyr::mutate(",
+      keep_gvars,
+      fmt_lines,
+      '    .keep = "none"',
+      "  ) |>"
+    )
+  }
+
+  c(".raw <- data |>",
+    gen_group_by(gvars, drop = !inc_miss),
+    "  dplyr::summarize(",
+    sum_lines,
+    '    .groups = "drop"',
+    "  )",
+    "",
+    if (is.null(format_block)) {
+      ".long <- .raw |>"
+    } else {
+      c(".long <- .raw |>", format_block)
+    },
+    "  tidyr::pivot_longer(",
+    paste0("    cols = c(", paste(cids, collapse = ", "), "),"),
+    '    names_to = ".cid",',
+    '    values_to = ".value"',
+    "  ) |>",
+    "  dplyr::mutate(",
+    paste0("    .param = unname(", param_map, "[.cid]),"),
+    paste0("    .stat  = unname(", stat_map, "[.cid]),"),
+    "    .cid = NULL",
+    "  )",
     "",
     "tidyr::pivot_wider(",
     "  .long,",
     "  id_cols     = c(.param, .stat),",
-    paste0("  names_from  = c(", paste(gvars, collapse = ", "), "),"),
+    paste0("  names_from  = c(", gvars_csv, "),"),
     "  values_from = .value",
     ")"
   )
@@ -240,6 +309,8 @@ gen_hierarchical <- function(ts) {
   raw_expr_p <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", parent_var, extra, "))") else paste0(fun, "(", parent_var, extra, ")")
   raw_expr_c <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", child_var,  extra, "))") else paste0(fun, "(", child_var,  extra, ")")
   fmt_expr   <- gen_format_expr(s)
+  # Keep raw type when no format is specified.
+  value_expr <- if (is.null(fmt_expr)) ".value_raw" else fmt_expr
 
   c(".chunks <- list()", "",
     paste0("# Parent level: ", parent_var),
@@ -250,7 +321,7 @@ gen_hierarchical <- function(ts) {
     '    .groups     = "drop"',
     "  ) |>",
     "  dplyr::mutate(",
-    paste0("    .value      = ", fmt_expr, ","),
+    paste0("    .value      = ", value_expr, ","),
     paste0("    .parent     = ", parent_var, ","),
     paste0("    .row_label  = ", parent_var, ","),
     paste0("    .stat = ", skey, ","),
@@ -266,7 +337,7 @@ gen_hierarchical <- function(ts) {
     '    .groups     = "drop"',
     "  ) |>",
     "  dplyr::mutate(",
-    paste0("    .value      = ", fmt_expr, ","),
+    paste0("    .value      = ", value_expr, ","),
     paste0("    .parent     = ", parent_var, ","),
     paste0("    .row_label  = ", child_var, ","),
     paste0("    .stat = ", skey, ","),

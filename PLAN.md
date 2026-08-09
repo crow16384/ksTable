@@ -2,7 +2,7 @@
 
 **Project**: JSON DSL to Dplyr Code Generator for Clinical Tables  
 **Date**: 2026-08-09  
-**Status**: v0.1.0 usable — Phases 1–6 complete for two layouts; Phase 7 polish ongoing
+**Status**: v0.1.0 usable — Phases 1–7 complete for two layouts; parameter_stat uses single-pass summarize
 
 ## Overview
 
@@ -70,6 +70,7 @@ format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
 
 - `parameter_stat`, `hierarchical` (2-level, first statistic)
 - Bare-call emission; format types; `args`; `apply_to`
+- `parameter_stat`: single-pass `summarize` + reshape (temp `.cN` columns)
 
 ### Phase 3: Metadata extraction — DONE (caller-driven)
 

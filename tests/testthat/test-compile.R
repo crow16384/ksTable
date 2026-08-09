@@ -46,10 +46,14 @@ test_that("kst_compile returns a single character string", {
 
 # ── parameter_stat layout ─────────────────────────────────────────────────────
 
-test_that("parameter_stat: one .chunks[[i]] per parameter x statistic", {
+test_that("parameter_stat: single summarize with one .cN per statistic", {
   code <- kst_compile(demog_spec)
-  # 1 parameter × 3 statistics = 3 chunks
-  expect_equal(lengths(regmatches(code, gregexpr("\\.chunks\\[\\[", code))), 3L)
+  # 1 parameter × 3 statistics = 3 temp columns, one summarize
+  expect_equal(lengths(regmatches(code, gregexpr("dplyr::summarize\\(", code))), 1L)
+  expect_true(grepl("\\.c1\\s*=", code))
+  expect_true(grepl("\\.c2\\s*=", code))
+  expect_true(grepl("\\.c3\\s*=", code))
+  expect_false(grepl("\\.chunks", code))
 })
 
 test_that("parameter_stat: references data variable as bare symbol", {
@@ -84,20 +88,41 @@ test_that("parameter_stat: list() wraps calc for custom format", {
   expect_true(grepl("list\\(mean_sd\\(AGE\\)\\)", code))
 })
 
-test_that("parameter_stat: default formatter is as.character", {
+test_that("parameter_stat: no silent as.character when all stats stay raw", {
+  spec <- '{
+    "schema_version":"1.0",
+    "table_spec":{
+      "parameter":{"age":{"variable":"AGE","label":"Age"}},
+      "statistics":{
+        "n":{"fun":"length"},
+        "med":{"fun":"median","args":{"na.rm":true}}
+      },
+      "groups":{"by":["TRT01P"]},
+      "layout":{"row_structure":"parameter_stat"}
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_false(grepl("as\\.character", code))
+  expect_false(grepl("\\.keep", code))
+  expect_true(grepl("tidyr::pivot_longer", code))
+})
+
+test_that("parameter_stat: unformatted coerced only when mixed with formatted", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("as\\.character\\(\\.value_raw\\)", code))
+  # n has no format; mean_sd/median do → unify n with as.character
+  expect_true(grepl("as\\.character\\(\\.c1\\)", code))
+  expect_true(grepl('\\.keep = "none"', code))
 })
 
 test_that("parameter_stat: custom formatter uses vapply with function name", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("vapply\\(\\.value_raw, format_mean_sd", code))
+  expect_true(grepl("vapply\\(\\.c2, format_mean_sd", code))
   expect_false(grepl("format_fns", code))  # no list lookup
 })
 
 test_that("parameter_stat: sprintf format emitted correctly", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl('sprintf\\("%.1f", \\.value_raw\\)', code))
+  expect_true(grepl('sprintf\\("%.1f", \\.c3\\)', code))
 })
 
 test_that("parameter_stat: param label emitted as string literal", {
@@ -105,16 +130,21 @@ test_that("parameter_stat: param label emitted as string literal", {
   expect_true(grepl('"Age \\(years\\)"', code))
 })
 
-test_that("parameter_stat: .value_raw dropped in mutate", {
+test_that("parameter_stat: formats via mutate .keep=none (no .value_raw helper)", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("\\.value_raw\\s*=\\s*NULL", code))
+  expect_false(grepl("\\.value_raw", code))
+  expect_true(grepl('\\.keep = "none"', code))
 })
 
-test_that("parameter_stat: assembles with bind_rows + pivot_wider", {
+test_that("parameter_stat: assembles with mutate + pivot_longer + pivot_wider", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("dplyr::bind_rows\\(\\.chunks\\)", code))
+  expect_true(grepl("\\.raw <- data", code))
+  expect_true(grepl("dplyr::mutate", code))
+  expect_true(grepl("tidyr::pivot_longer", code))
   expect_true(grepl("tidyr::pivot_wider", code))
   expect_true(grepl("id_cols\\s*=\\s*c\\(\\.param, \\.stat\\)", code))
+  expect_false(grepl("dplyr::transmute", code))
+  expect_false(grepl("dplyr::bind_rows", code))
   expect_false(grepl("\\.stat_label", code))
 })
 
@@ -403,7 +433,9 @@ test_that("labels shorter than variables pad with variable names", {
   code <- kst_compile(spec)
   expect_true(grepl('"Age \\(years\\)"', code))
   expect_true(grepl('"WEIGHT"', code))
-  expect_equal(length(gregexpr("\\.chunks\\[\\[", code)[[1]]), 2L)
+  expect_true(grepl("\\.c1\\s*=", code))
+  expect_true(grepl("\\.c2\\s*=", code))
+  expect_equal(lengths(regmatches(code, gregexpr("dplyr::summarize\\(", code))), 1L)
 })
 
 test_that("apply_to that excludes every parameter errors at compile time", {

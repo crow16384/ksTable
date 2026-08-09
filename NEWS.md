@@ -18,18 +18,23 @@ First usable release. Core DSL-to-dplyr compiler for two layouts.
 ### Layouts
 
 * `parameter_stat` — one row per parameter × statistic; columns = group levels.
+  Generator emits a **single** `group_by` + `summarize` (temp columns `.cN`),
+  then format `mutate`, `pivot_longer`, and `pivot_wider`.
 * `hierarchical` — parent + one nested child (e.g. SOC → PT); first statistic only;
   honors `include_missing_levels` via `.drop = FALSE`.
 
 ### Formats
 
-* default → `as.character(.value_raw)`
+* *(none)* → raw type kept (numeric/integer); no silent `as.character`
 * `sprintf` / `custom` / `template` (requires Suggests **glue** at eval) / `ksformat`
+* Mixing character formats with unformatted stats coerces the unformatted
+  siblings only so `bind_rows` can build `.value`
 
 ### Hardening (0.1 honesty pass)
 
 * Validate-before-compile; fail on empty chunks / short `labels` padding;
   surface ksformat failures as warnings; docs aligned with bare-call codegen.
+* Single-pass `parameter_stat` consolidation (no per-stat `.chunks`).
 
 ### Package contents
 

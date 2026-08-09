@@ -306,8 +306,8 @@ spec_ext <- gsub('"fun":      "cat_summary"',  '"fun": "sex_pct_ext"',
 
 cat("-- Generated script for demographics spec -------------------------------\n")
 code <- kst_compile(demographics_spec)
-n_chunks <- lengths(regmatches(code, gregexpr(".chunks[[", code, fixed = TRUE)))
-cat("   Chunk count:", n_chunks, "\n\n")
+n_summarize <- lengths(regmatches(code, gregexpr("dplyr::summarize(", code, fixed = TRUE)))
+cat("   summarize() calls:", n_summarize, "(single pass for parameter_stat)\n\n")
 cat(code)
 
 ## -- 8. Optional: evaluate generated source manually -------------------------

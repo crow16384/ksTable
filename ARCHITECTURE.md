@@ -65,33 +65,53 @@ jsonvalidate, glue, testthat, knitr, rmarkdown (Suggests).
 JSON → fromJSON → table_spec
   → assert_id / structural guards
   → layout$row_structure
-       parameter_stat → gen_parameter_stat
+       parameter_stat → build_calc_plan → single summarize + reshape
        hierarchical   → gen_hierarchical (first param, first nested, first stat)
   → character script
 ```
 
-**Emission pattern** (bare calls, not registries):
+**`parameter_stat` emission** (one `group_by` + `summarize` for all calcs):
 
 ```r
-dplyr::summarize(
-  .value_raw = mean_sd(AGE, na.rm = TRUE),
-  .groups    = "drop"
-) |>
-dplyr::mutate(
-  .value     = vapply(.value_raw, format_mean_sd, character(1L)),
-  .param     = "Age (years)",
-  .stat      = "mean_sd",
-  .value_raw = NULL
-)
+.raw <- data |>
+  dplyr::group_by(TRT01P) |>
+  dplyr::summarize(
+    .c1 = count(AGE),
+    .c2 = list(mean_sd(AGE)),
+    .groups = "drop"
+  )
+
+.long <- .raw |>
+  dplyr::mutate(
+    TRT01P = TRT01P,
+    .c1 = sprintf("%d", .c1),
+    .c2 = vapply(.c2, format_mean_sd, character(1L)),
+    .keep = "none"
+  ) |>
+  tidyr::pivot_longer(cols = c(.c1, .c2), names_to = ".cid", values_to = ".value") |>
+  dplyr::mutate(
+    .param = unname(c(".c1" = "Age (years)", ".c2" = "Age (years)")[.cid]),
+    .stat  = unname(c(".c1" = "n", ".c2" = "mean_sd")[.cid]),
+    .cid = NULL
+  )
+
+tidyr::pivot_wider(.long, id_cols = c(.param, .stat), ...)
 ```
 
-| `format.type` | Generated expression |
+Temp columns `.c1`, `.c2`, … keep labels out of identifiers (SR-1). Hierarchical
+still uses two `.chunks` passes (parent vs child group keys differ).
+
+| `format.type` | Generated expression (on `.cN` / `.value_raw`) |
 |---------------|----------------------|
-| *(none)* | `as.character(.value_raw)` |
-| `sprintf` | `sprintf("<pattern>", .value_raw)` |
-| `custom` | `vapply(.value_raw, <fun>, character(1L))` |
-| `template` | `vapply(..., glue::glue_data(...))` |
-| `ksformat` | `ksformat::fput(.value_raw, "<format_name>")` |
+| *(none)* | raw value kept (no `as.character`) |
+| `sprintf` | `sprintf("<pattern>", .cN)` |
+| `custom` | `vapply(.cN, <fun>, character(1L))` |
+| `template` | `vapply(.cN, function(.x) glue::glue_data(.x, ...), ...)` |
+| `ksformat` | `ksformat::fput(.cN, "<format_name>")` |
+
+When some statistics use a character format and others do not, unformatted
+siblings are coerced with `as.character()` only so `bind_rows` can combine
+`.value`. Tables with no formats stay numeric.
 
 **Output columns**
 

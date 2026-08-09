@@ -32,7 +32,7 @@ Key design principles:
   the console, step through it, save it to a file.
 * **No infrastructure**: calc and format functions are resolved from your
   environment just like any other R function call.
-* **Isolated execution**: intermediate objects (`.chunks`, `.long`) stay in a
+* **Isolated execution**: intermediate objects (`.raw`, `.long`) stay in a
   private environment and never pollute your workspace.
 
 ---
@@ -124,7 +124,8 @@ demog_spec <- '{
     },
     "statistics": {
       "n": {
-        "fun":   "count"
+        "fun":   "count",
+        "format": { "type": "sprintf", "pattern": "%d" }
       },
       "mean_sd": {
         "fun":    "mean_sd",
@@ -132,7 +133,8 @@ demog_spec <- '{
       },
       "median": {
         "fun":   "median",
-        "args":  { "na.rm": true }
+        "args":  { "na.rm": true },
+        "format": { "type": "sprintf", "pattern": "%.1f" }
       }
     },
     "groups": {
@@ -156,58 +158,6 @@ code <- kst_compile(demog_spec)
 cat(code)
 ```
 
-```
-.chunks <- list()
-
-.chunks[[1L]] <- data |>
-  dplyr::group_by(TRT01P) |>
-  dplyr::summarize(
-    .value_raw  = count(AGE),
-    .groups     = "drop"
-  ) |>
-  dplyr::mutate(
-    .value      = as.character(.value_raw),
-    .param      = "Age (years)",
-    .stat = "n",
-    .value_raw  = NULL
-  )
-
-.chunks[[2L]] <- data |>
-  dplyr::group_by(TRT01P) |>
-  dplyr::summarize(
-    .value_raw  = list(mean_sd(AGE)),
-    .groups     = "drop"
-  ) |>
-  dplyr::mutate(
-    .value      = vapply(.value_raw, format_mean_sd, character(1L)),
-    .param      = "Age (years)",
-    .stat = "mean_sd",
-    .value_raw  = NULL
-  )
-
-.chunks[[3L]] <- data |>
-  dplyr::group_by(TRT01P) |>
-  dplyr::summarize(
-    .value_raw  = median(AGE, na.rm = TRUE),
-    .groups     = "drop"
-  ) |>
-  dplyr::mutate(
-    .value      = as.character(.value_raw),
-    .param      = "Age (years)",
-    .stat = "median",
-    .value_raw  = NULL
-  )
-
-.long <- dplyr::bind_rows(.chunks)
-
-tidyr::pivot_wider(
-  .long,
-  id_cols     = c(.param, .stat),
-  names_from  = c(TRT01P),
-  values_from = .value
-)
-```
-
 ### Generate the table
 
 ```{r generate-demog}
@@ -216,14 +166,6 @@ env <- new.env(parent = environment())
 env$data <- adsl
 result <- eval(parse(text = code), envir = env)
 print(result)
-```
-
-```
-# A tibble: 3 × 5
-  .param      .stat   `Drug A`     `Drug B`     Placebo
-1 Age (years) n       160          160          160
-2 Age (years) mean_sd 44.9 (11.37) 44.9 (11.84) 44.5 (11.96)
-3 Age (years) median  45           44.5         44
 ```
 
 ---
@@ -300,18 +242,7 @@ ae_result <- eval(parse(text = ae_code), envir = ae_env)
 print(ae_result)
 ```
 
-```
-# A tibble: 6 × 7
-  .parent             .is_child .row_label           .stat Drug A Drug B Placebo
-1 Cardiac disorders   FALSE     Cardiac disorders    n           36     39     34
-2 Cardiac disorders   TRUE      Angina pectoris      n           14     21     21
-3 Cardiac disorders   TRUE      Myocardial infarction n          22     18     13
-4 Gastrointestinal d… FALSE     Gastrointestinal d…  n           73     64     54
-5 Gastrointestinal d… TRUE      Diarrhea             n           39     31     35
-6 Gastrointestinal d… TRUE      Nausea               n           34     33     19
-```
-
-The `.parent` and `.is_child` columns identify the hierarchy; ksTFL uses them
+The `.parent` and `.is_child` columns identify the hierarchy; `ksTFL` will use them
 to apply indentation and header formatting during rendering.
 
 ---

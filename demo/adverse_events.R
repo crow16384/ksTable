@@ -143,7 +143,7 @@ print(gi, n = Inf, width = 120)
 
 cat("\n-- Intermediate objects in execution env -------------------------------\n")
 cat("Objects: ", paste(ls(env, all.names = TRUE), collapse = ", "), "\n")
-cat("\nFirst parent chunk (.chunks[[1L]], head):\n")
+cat("\nParent chunk (.chunks[[1L]], head):\n")
 print(head(env$.chunks[[1L]]))
 cat("\nLong-format before pivot (.long, head):\n")
 print(head(env$.long))

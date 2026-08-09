@@ -120,5 +120,5 @@ print(demog, n = Inf, width = 120)
 ##   env  <- new.env(parent = environment())
 ##   env$data <- adsl
 ##   eval(parse(text = code), envir = env)
-##   env$.chunks   # list of per-stat tibbles before bind_rows
-##   env$.long     # long-format assembled table
+##   env$.raw    # wide summarize + formatted temp columns (.c1, .c2, ...)
+##   env$.long   # long-format before pivot_wider

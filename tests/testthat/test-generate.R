@@ -79,12 +79,12 @@ test_that("parameter_stat: has .param and .stat columns", {
   expect_true(".stat" %in% names(result))
 })
 
-test_that("parameter_stat: group columns present as character", {
+test_that("parameter_stat: group columns present; formatted values are character", {
   result <- run_compiled_table(demog_spec, test_adsl)
   expect_true("Drug A"  %in% names(result))
   expect_true("Drug B"  %in% names(result))
   expect_true("Placebo" %in% names(result))
-  # All value columns are character
+  # demog_spec mixes sprintf/custom formats → character value columns
   val_cols <- setdiff(names(result), c(".param", ".stat"))
   for (col in val_cols) expect_type(result[[col]], "character")
 })
@@ -191,10 +191,10 @@ test_that("hierarchical: rows ordered parent-before-children within each SOC", {
   }
 })
 
-test_that("hierarchical: value columns are character", {
+test_that("hierarchical: value columns keep raw type when no format", {
   result   <- run_compiled_table(ae_spec, test_adae)
   val_cols <- setdiff(names(result), c(".parent", ".is_child", ".row_label", ".stat"))
-  for (col in val_cols) expect_type(result[[col]], "character")
+  for (col in val_cols) expect_type(result[[col]], "integer")
 })
 
 # ── isolation: intermediates not in caller env ────────────────────────────────
@@ -202,6 +202,7 @@ test_that("hierarchical: value columns are character", {
 test_that("compiled eval does not pollute calling environment", {
   run_compiled_table(demog_spec, test_adsl)
   # Intermediates from the generated script must not appear in the caller's env
+  expect_false(".raw"    %in% ls())
   expect_false(".chunks" %in% ls())
   expect_false(".long"   %in% ls())
   expect_false("data"    %in% ls(envir = parent.env(environment())))
@@ -386,7 +387,7 @@ test_that("include_missing_levels keeps empty factor levels after metadata", {
   }'
   result <- run_compiled_table(spec, adsl)
   expect_true("Drug C" %in% names(result))
-  expect_equal(as.character(result[["Drug C"]]), "0")
+  expect_equal(result[["Drug C"]], 0L)
 })
 
 test_that("template format requires glue at eval time", {
