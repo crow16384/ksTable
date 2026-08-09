@@ -36,7 +36,7 @@
 #'       \code{"jsonvalidate"}, \code{"manual"}, or \code{"none"}.}
 #'   }
 #'
-#' @seealso \code{\link{kst_compile}}, \code{\link{kst_generate_table}}
+#' @seealso \code{\link{kst_compile}}, \code{\link{kst_save}}
 #'
 #' @examples
 #' spec <- '{
@@ -109,6 +109,9 @@ kst_validate_spec <- function(json_spec) {
   )
   if (!is.null(spec) && !is.null(spec$table_spec)) {
     errors <- c(errors, validate_identifiers(spec$table_spec))
+    # Semantic denom rules (by ⊆ groups.by, args.denom conflict, etc.) —
+    # not fully expressible in JSON Schema, so always run.
+    errors <- c(errors, validate_denominator_rules(spec$table_spec))
   }
 
   list(valid  = length(errors) == 0L,
@@ -157,6 +160,15 @@ validate_structure_manual <- function(json_spec) {
   # statistics: fun required; format type + dependent field required
   for (sn in names(ts$statistics)) {
     s <- ts$statistics[[sn]]
+
+    stat_allowed <- c("fun", "args", "apply_to", "format", "denominator")
+    stat_extra   <- setdiff(names(s), stat_allowed)
+    if (length(stat_extra) > 0L) {
+      errors <- c(errors, sprintf(
+        "/table_spec/statistics/%s: must NOT have additional properties: %s",
+        sn, paste(stat_extra, collapse = ", ")))
+    }
+
     if (is.null(s$fun))
       errors <- c(errors, sprintf(
         "Missing required field: /table_spec/statistics/%s/fun", sn))
@@ -198,6 +210,65 @@ validate_structure_manual <- function(json_spec) {
   errors
 }
 
+# ── Internal: denominator semantic rules (always runs) ────────────────────────
+# Cross-field rules that JSON Schema cannot fully express (by ⊆ groups.by,
+# args.denom conflict, external value required when by is set).
+
+validate_denominator_rules <- function(ts) {
+  errors <- character(0)
+  if (is.null(ts) || is.null(ts$statistics)) return(errors)
+
+  gby <- unlist(ts$groups$by)
+
+  for (sn in names(ts$statistics)) {
+    s <- ts$statistics[[sn]]
+    if (is.null(s$denominator)) next
+
+    if (!is.null(s$args) && "denom" %in% names(s$args))
+      errors <- c(errors, sprintf(
+        "/table_spec/statistics/%s: cannot set both denominator and args.denom", sn))
+
+    d <- s$denominator
+    dtype <- d$type
+    if (is.null(dtype)) {
+      errors <- c(errors, sprintf(
+        "Missing required field: /table_spec/statistics/%s/denominator/type", sn))
+      next
+    }
+    if (!dtype %in% c("n", "n_distinct", "data_n", "external")) {
+      errors <- c(errors, sprintf(
+        "/table_spec/statistics/%s/denominator/type: '%s' must be one of [n, n_distinct, data_n, external]",
+        sn, dtype))
+      next
+    }
+    if (dtype == "n_distinct" && is.null(d$variable))
+      errors <- c(errors, sprintf(
+        "Missing required field: /table_spec/statistics/%s/denominator/variable", sn))
+    if (dtype == "data_n" && (is.null(d$by) || length(d$by) == 0L))
+      errors <- c(errors, sprintf(
+        "Missing required field: /table_spec/statistics/%s/denominator/by", sn))
+    if (dtype == "external" && is.null(d$name))
+      errors <- c(errors, sprintf(
+        "Missing required field: /table_spec/statistics/%s/denominator/name", sn))
+    if (dtype == "external" &&
+        !is.null(d$by) && length(d$by) > 0L && is.null(d$value))
+      errors <- c(errors, sprintf(
+        "Missing required field: /table_spec/statistics/%s/denominator/value (required when denominator.by is set)",
+        sn))
+
+    dby <- unlist(d$by)
+    if (!is.null(dby) && length(dby) > 0L && !is.null(gby)) {
+      bad <- setdiff(dby, gby)
+      if (length(bad) > 0L)
+        errors <- c(errors, sprintf(
+          "/table_spec/statistics/%s/denominator/by: %s not in groups.by",
+          sn, paste(bad, collapse = ", ")))
+    }
+  }
+
+  errors
+}
+
 # ── Internal: SR-1 identifier safety (Layer 2, always runs) ───────────────────
 
 validate_identifiers <- function(ts) {
@@ -223,7 +294,7 @@ validate_identifiers <- function(ts) {
           safe(p$nested[[cn]]$variable, paste0("nested.", cn, ".variable"))
   }
 
-  # statistics: fun, format.fun, args keys
+  # statistics: fun, format.fun, args keys, denominator identifiers
   for (sn in names(ts$statistics)) {
     s <- ts$statistics[[sn]]
     if (!is.null(s$fun))
@@ -233,6 +304,20 @@ validate_identifiers <- function(ts) {
     if (!is.null(s$args))
       for (k in names(s$args))
         safe(k, paste0("statistics.", sn, ".args.", k))
+    if (!is.null(s$denominator)) {
+      d <- s$denominator
+      if (!is.null(d$variable))
+        safe(d$variable, paste0("statistics.", sn, ".denominator.variable"))
+      if (!is.null(d$distinct))
+        safe(d$distinct, paste0("statistics.", sn, ".denominator.distinct"))
+      if (!is.null(d$name))
+        safe(d$name, paste0("statistics.", sn, ".denominator.name"))
+      if (!is.null(d$value))
+        safe(d$value, paste0("statistics.", sn, ".denominator.value"))
+      if (!is.null(d$by))
+        for (bv in d$by)
+          safe(bv, paste0("statistics.", sn, ".denominator.by"))
+    }
   }
 
   # groups$by

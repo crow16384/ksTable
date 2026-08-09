@@ -4,15 +4,12 @@
 \alias{kst_save}
 \title{Save a compiled table script to an R file}
 \usage{
-kst_save(json_spec, file, metadata = NULL, overwrite = FALSE)
+kst_save(json_spec, file, overwrite = FALSE)
 }
 \arguments{
 \item{json_spec}{JSON string or path to a \code{.json} file.}
 
 \item{file}{Output path (typically a \code{.R} file).}
-
-\item{metadata}{Optional metadata list; passed to
-\code{\link{kst_compile}} (currently unused by the compiler but reserved).}
 
 \item{overwrite}{Logical. If \code{FALSE} (default), stops when \code{file}
 already exists, protecting manually-edited scripts.}
@@ -51,5 +48,5 @@ cat(readLines(tmp), sep = "\n")
 
 }
 \seealso{
-\code{\link{kst_compile}}, \code{\link{kst_generate_table}}
+\code{\link{kst_compile}}, \code{\link{kst_validate_spec}}
 }

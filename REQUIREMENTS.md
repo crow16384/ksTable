@@ -11,13 +11,12 @@
 
 ✓ JSON DSL for declarative table specifications  
 ✓ Pure-R generator producing dplyr/tidyr R code  
-✓ Metadata introspection (ksformat, factors, distinct values)  
-✓ User-provided calculation functions  
+✓ Metadata helpers (ksformat, factors, distinct values) applied by caller before eval  
+✓ User-provided calculation functions (bare names in generated code)  
 ✓ Multi-way stratification and grouping  
-✓ Hierarchical table structures (parent/child rows)  
-✓ Multiple formatting methods (ksformat, templates, custom)  
-✓ Query plan optimization  
-✓ Integration with ksTFL for rendering  
+✓ Hierarchical table structures (parent/child rows, 2-level in v0.1)  
+✓ Multiple formatting methods (ksformat, templates, custom, sprintf)  
+✓ Integration with ksTFL for rendering (output shape)  
 ✓ Integration with ksformat for value formatting  
 
 ### Out of Scope
@@ -29,6 +28,7 @@
 ✗ GUI or interactive table builder  
 ✗ Real-time table updates  
 ✗ Database connectivity  
+✗ Query plan optimization / C++ compiler (rejected after pure-R PoC)  
 
 ---
 
@@ -54,9 +54,9 @@
 
 ### UR-4: Metadata-Driven Code Generation
 
-**Description**: Compiler shall introspect metadata to generate adaptive code  
-**Rationale**: Tables adapt to data (new treatment arms, missing levels)  
-**Acceptance**: Generated code discovers factor levels at runtime  
+**Description**: Users shall prepare grouping metadata (factor levels, ksformat labels) before evaluating compiled code when missing levels or formatted headers are required  
+**Rationale**: Tables adapt to data (new treatment arms, missing levels) via runtime factors  
+**Acceptance**: `kst_extract_metadata` / `kst_apply_metadata` plus `include_missing_levels` produce complete group columns  
 
 ### UR-5: Hierarchical Tables
 
@@ -297,30 +297,38 @@
 ### IR-1: Main Compilation Interface
 
 ```r
-kst_compile(json_spec, metadata = NULL, optimize = TRUE) -> character
+kst_compile(json_spec) -> character
 ```
 
 **Input**:
 
 - `json_spec`: JSON string or file path
-- `metadata`: Optional pre-extracted metadata
 
 **Output**: R code string (plain script, expects `data` in eval env)
 
+**Behavior**: Validates the spec (same checks as `kst_validate_spec`) then emits code.
+Metadata is not applied during compile.
+
 **Errors**: Parsing errors, validation errors, compilation errors
 
-### IR-2: Table Generation Interface
+### IR-2: Execution Workflow Interface
 
 ```r
-kst_generate_table(json_spec, data, metadata = NULL, envir = parent.frame()) -> tibble
+# optional metadata prep when include_missing_levels / ksformat headers needed
+meta <- kst_extract_metadata(data, vars, format_map = ...)
+data <- kst_apply_metadata(data, meta)
+
+code <- kst_compile(json_spec)
+env  <- new.env(parent = envir)
+env$data <- data
+result <- eval(parse(text = code), envir = env)
 ```
 
 **Input**:
 
 - `json_spec`: JSON string or file path
 - `data`: Source data frame
-- `metadata`: Optional pre-extracted metadata
-- `envir`: Environment for resolving calc/format functions (default: caller's frame)
+- `envir`: Parent environment used to resolve calc/format functions
 
 **Output**: Formatted tibble ready for ksTFL
 

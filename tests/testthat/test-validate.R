@@ -52,6 +52,28 @@ test_that("spec with all format types passes", {
   expect_length(r$errors, 0L)
 })
 
+test_that("statistics apply_to is accepted", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "cont": { "variables": ["AGE", "BMIBL"] },
+        "sex":  { "variable": "SEX" }
+      },
+      "statistics": {
+        "n":       { "fun": "length" },
+        "mean_sd": { "fun": "mean_sd", "apply_to": ["cont"] },
+        "sex_n":   { "fun": "length",  "apply_to": ["sex"] }
+      },
+      "groups":  { "by": ["TRT"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  r <- kst_validate_spec(spec)
+  expect_true(r$valid)
+  expect_length(r$errors, 0L)
+})
+
 test_that("hierarchical spec with nested parameter passes", {
   spec <- '{
     "schema_version": "1.0",
@@ -104,10 +126,17 @@ test_that("missing layout fails", {
 })
 
 test_that("missing statistics.fun fails", {
-  spec <- minimal_spec(list(statistics = list(n = list(label = "N"))))
+  spec <- minimal_spec(list(statistics = list(n = list(args = list(na.rm = TRUE)))))
   r <- kst_validate_spec(spec)
   expect_false(r$valid)
   expect_true(any(grepl("fun", r$errors)))
+})
+
+test_that("statistics.label is rejected", {
+  spec <- minimal_spec(list(statistics = list(n = list(fun = "length", label = "N"))))
+  r <- kst_validate_spec(spec)
+  expect_false(r$valid)
+  expect_true(any(grepl("additional properties|additionalProperty|label", r$errors)))
 })
 
 test_that("missing parameter.variable fails", {
@@ -202,6 +231,87 @@ test_that("valid dot-containing identifier is accepted", {
   ))
   r <- kst_validate_spec(spec)
   expect_true(r$valid)
+})
+
+# ── Denominator ───────────────────────────────────────────────────────────────
+
+test_that("denominator types n / n_distinct / data_n / external validate", {
+  r1 <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(fun = "count_pct",
+                                 denominator = list(type = "n")))
+  )))
+  expect_true(r1$valid)
+
+  r2 <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "n_distinct", variable = "USUBJID")))
+  )))
+  expect_true(r2$valid)
+
+  r3 <- kst_validate_spec(minimal_spec(list(
+    groups = list(by = list("TRT", "SEX")),
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "data_n", by = list("TRT"), distinct = "USUBJID")))
+  )))
+  expect_true(r3$valid)
+
+  r4 <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "external", name = "adsl_n",
+                        value = "N", by = list("TRT"))))
+  )))
+  expect_true(r4$valid)
+
+  r5 <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "external", name = "N_total")))
+  )))
+  expect_true(r5$valid)
+})
+
+test_that("denominator + args.denom is rejected", {
+  r <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      args = list(denom = 100),
+      denominator = list(type = "n")))
+  )))
+  expect_false(r$valid)
+  expect_true(any(grepl("args\\.denom|denominator", r$errors)))
+})
+
+test_that("denominator.by must be subset of groups.by", {
+  r <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "data_n", by = list("SEX"))))
+  )))
+  expect_false(r$valid)
+  expect_true(any(grepl("denominator/by", r$errors)))
+})
+
+test_that("external with by requires value", {
+  r <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "external", name = "adsl_n", by = list("TRT"))))
+  )))
+  expect_false(r$valid)
+  expect_true(any(grepl("denominator/value", r$errors)))
+})
+
+test_that("n_distinct denominator requires variable", {
+  r <- kst_validate_spec(minimal_spec(list(
+    statistics = list(pct = list(
+      fun = "count_pct",
+      denominator = list(type = "n_distinct")))
+  )))
+  expect_false(r$valid)
+  expect_true(any(grepl("denominator/variable", r$errors)))
 })
 
 # ── File path input ────────────────────────────────────────────────────────────

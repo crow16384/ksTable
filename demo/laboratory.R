@@ -62,37 +62,31 @@ alt_spec <- '{
     },
     "statistics": {
       "n": {
-        "fun":   "length",
-        "label": "N"
+        "fun":   "length"
       },
       "mean": {
         "fun":    "mean",
         "args":   { "na.rm": true },
-        "label":  "Mean",
         "format": { "type": "sprintf", "pattern": "%.1f" }
       },
       "sd": {
         "fun":    "sd",
         "args":   { "na.rm": true },
-        "label":  "SD",
         "format": { "type": "sprintf", "pattern": "%.2f" }
       },
       "median": {
         "fun":    "median",
         "args":   { "na.rm": true },
-        "label":  "Median",
         "format": { "type": "sprintf", "pattern": "%.1f" }
       },
       "min": {
         "fun":    "min",
         "args":   { "na.rm": true },
-        "label":  "Min",
         "format": { "type": "sprintf", "pattern": "%.1f" }
       },
       "max": {
         "fun":    "max",
         "args":   { "na.rm": true },
-        "label":  "Max",
         "format": { "type": "sprintf", "pattern": "%.1f" }
       }
     },
@@ -126,7 +120,9 @@ cat(first_chunk, "\n...\n\n")
 
 ## -- 6. Generate table - all visits combined -----------------------------------
 
-lab_table <- kst_generate_table(alt_spec, adlb)
+env <- new.env(parent = environment())
+env$data <- adlb
+lab_table <- eval(parse(text = code), envir = env)
 
 cat("-- Laboratory Summary (all visits) -------------------------------------\n")
 print(lab_table, n = Inf, width = 120)
@@ -135,12 +131,14 @@ print(lab_table, n = Inf, width = 120)
 
 cat("\n-- Laboratory Summary (Baseline only) ----------------------------------\n")
 baseline <- adlb[adlb$VISIT == "Baseline", ]
-lab_baseline <- kst_generate_table(alt_spec, baseline)
+env$data <- baseline
+lab_baseline <- eval(parse(text = code), envir = env)
 print(lab_baseline, n = Inf, width = 120)
 
 ## -- 8. Generate table - Week 12 only -----------------------------------------
 
 cat("\n-- Laboratory Summary (Week 12 only) -----------------------------------\n")
 wk12 <- adlb[adlb$VISIT == "Week 12", ]
-lab_wk12 <- kst_generate_table(alt_spec, wk12)
+env$data <- wk12
+lab_wk12 <- eval(parse(text = code), envir = env)
 print(lab_wk12, n = Inf, width = 120)

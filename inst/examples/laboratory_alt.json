@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "lab_alt",
+    "title": "ALT by Treatment and Visit",
+    "parameter": {
+      "alt": { "variable": "AVAL", "label": "ALT (U/L)" }
+    },
+    "statistics": {
+      "n": { "fun": "length" },
+      "median": {
+        "fun": "median",
+        "args": { "na.rm": true },
+        "format": { "type": "sprintf", "pattern": "%.1f" }
+      },
+      "mean": {
+        "fun": "mean",
+        "args": { "na.rm": true },
+        "format": { "type": "sprintf", "pattern": "%.1f" }
+      }
+    },
+    "groups": {
+      "by": ["TRT01P", "AVISIT"]
+    },
+    "layout": {
+      "row_structure": "parameter_stat",
+      "column_structure": "groups"
+    }
+  }
+}

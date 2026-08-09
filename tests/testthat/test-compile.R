@@ -8,12 +8,11 @@ demog_spec <- '{
   "table_spec": {
     "parameter":  { "age": { "variable": "AGE", "label": "Age (years)" } },
     "statistics": {
-      "n":       { "fun": "length", "label": "N" },
-      "mean_sd": { "fun": "mean_sd", "label": "Mean (SD)",
+      "n":       { "fun": "length" },
+      "mean_sd": { "fun": "mean_sd",
                    "format": { "type": "custom", "fun": "format_mean_sd" } },
       "median":  { "fun": "median",
                    "args": { "na.rm": true },
-                   "label": "Median",
                    "format": { "type": "sprintf", "pattern": "%.1f" } }
     },
     "groups":  { "by": ["TRT01P"] },
@@ -30,7 +29,7 @@ ae_spec <- '{
         "nested": { "pt": { "variable": "AEDECOD" } }
       }
     },
-    "statistics": { "n": { "fun": "length", "label": "n" } },
+    "statistics": { "n": { "fun": "length" } },
     "groups":  { "by": ["TRT01P"] },
     "layout":  { "row_structure": "hierarchical" }
   }
@@ -47,10 +46,14 @@ test_that("kst_compile returns a single character string", {
 
 # ── parameter_stat layout ─────────────────────────────────────────────────────
 
-test_that("parameter_stat: one .chunks[[i]] per parameter x statistic", {
+test_that("parameter_stat: single summarize with one .cN per statistic", {
   code <- kst_compile(demog_spec)
-  # 1 parameter × 3 statistics = 3 chunks
-  expect_equal(lengths(regmatches(code, gregexpr("\\.chunks\\[\\[", code))), 3L)
+  # 1 parameter × 3 statistics = 3 temp columns, one summarize
+  expect_equal(lengths(regmatches(code, gregexpr("dplyr::summarize\\(", code))), 1L)
+  expect_true(grepl("\\.c1\\s*=", code))
+  expect_true(grepl("\\.c2\\s*=", code))
+  expect_true(grepl("\\.c3\\s*=", code))
+  expect_false(grepl("\\.chunks", code))
 })
 
 test_that("parameter_stat: references data variable as bare symbol", {
@@ -85,20 +88,41 @@ test_that("parameter_stat: list() wraps calc for custom format", {
   expect_true(grepl("list\\(mean_sd\\(AGE\\)\\)", code))
 })
 
-test_that("parameter_stat: default formatter is as.character", {
+test_that("parameter_stat: no silent as.character when all stats stay raw", {
+  spec <- '{
+    "schema_version":"1.0",
+    "table_spec":{
+      "parameter":{"age":{"variable":"AGE","label":"Age"}},
+      "statistics":{
+        "n":{"fun":"length"},
+        "med":{"fun":"median","args":{"na.rm":true}}
+      },
+      "groups":{"by":["TRT01P"]},
+      "layout":{"row_structure":"parameter_stat"}
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_false(grepl("as\\.character", code))
+  expect_false(grepl("\\.keep", code))
+  expect_true(grepl("tidyr::pivot_longer", code))
+})
+
+test_that("parameter_stat: unformatted coerced only when mixed with formatted", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("as\\.character\\(\\.value_raw\\)", code))
+  # n has no format; mean_sd/median do → unify n with as.character
+  expect_true(grepl("as\\.character\\(\\.c1\\)", code))
+  expect_true(grepl('\\.keep = "none"', code))
 })
 
 test_that("parameter_stat: custom formatter uses vapply with function name", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("vapply\\(\\.value_raw, format_mean_sd", code))
+  expect_true(grepl("vapply\\(\\.c2, format_mean_sd", code))
   expect_false(grepl("format_fns", code))  # no list lookup
 })
 
 test_that("parameter_stat: sprintf format emitted correctly", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl('sprintf\\("%.1f", \\.value_raw\\)', code))
+  expect_true(grepl('sprintf\\("%.1f", \\.c3\\)', code))
 })
 
 test_that("parameter_stat: param label emitted as string literal", {
@@ -106,15 +130,22 @@ test_that("parameter_stat: param label emitted as string literal", {
   expect_true(grepl('"Age \\(years\\)"', code))
 })
 
-test_that("parameter_stat: .value_raw dropped in mutate", {
+test_that("parameter_stat: formats via mutate .keep=none (no .value_raw helper)", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("\\.value_raw\\s*=\\s*NULL", code))
+  expect_false(grepl("\\.value_raw", code))
+  expect_true(grepl('\\.keep = "none"', code))
 })
 
-test_that("parameter_stat: assembles with bind_rows + pivot_wider", {
+test_that("parameter_stat: assembles with mutate + pivot_longer + pivot_wider", {
   code <- kst_compile(demog_spec)
-  expect_true(grepl("dplyr::bind_rows\\(\\.chunks\\)", code))
+  expect_true(grepl("\\.raw <- data", code))
+  expect_true(grepl("dplyr::mutate", code))
+  expect_true(grepl("tidyr::pivot_longer", code))
   expect_true(grepl("tidyr::pivot_wider", code))
+  expect_true(grepl("id_cols\\s*=\\s*c\\(\\.param, \\.stat\\)", code))
+  expect_false(grepl("dplyr::transmute", code))
+  expect_false(grepl("dplyr::bind_rows", code))
+  expect_false(grepl("\\.stat_label", code))
 })
 
 test_that("parameter_stat: pivot uses correct names_from column", {
@@ -177,6 +208,7 @@ test_that("hierarchical: .is_child column set correctly", {
 test_that("hierarchical: arrange by .parent, .is_child, .row_label", {
   code <- kst_compile(ae_spec)
   expect_true(grepl("arrange\\(\\.parent, \\.is_child, \\.row_label\\)", code))
+  expect_true(grepl("id_cols\\s*=\\s*c\\(\\.parent, \\.is_child, \\.row_label, \\.stat\\)", code))
 })
 
 # ── multi-group ────────────────────────────────────────────────────────────────
@@ -336,8 +368,8 @@ test_that("sourcing a saved script produces a valid tibble", {
     "table_spec": {
       "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
       "statistics": {
-        "n":    { "fun": "length", "label": "N" },
-        "mean": { "fun": "mean", "args": { "na.rm": true }, "label": "Mean",
+        "n":    { "fun": "length" },
+        "mean": { "fun": "mean", "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.1f" } }
       },
       "groups": { "by": ["TRT01P"] },
@@ -358,4 +390,260 @@ test_that("sourcing a saved script produces a valid tibble", {
   expect_true(is.data.frame(result))
   expect_true(".param" %in% names(result))
   expect_equal(nrow(result), 2L)   # 1 param x 2 stats
+})
+
+# ── validate-before-compile ───────────────────────────────────────────────────
+
+test_that("kst_compile rejects invalid specs", {
+  expect_error(kst_compile("{}"), "Invalid table specification")
+  expect_error(
+    kst_compile('{"table_spec": {"parameter": {}, "statistics": {}, "groups": {"by": []}, "layout": {"row_structure": "parameter_stat"}}}'),
+    "Invalid table specification"
+  )
+})
+
+test_that("kst_compile rejects injection attempts via validation", {
+  bad <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE; rm(list=ls())" } },
+      "statistics": { "n": { "fun": "length" } },
+      "groups":     { "by": ["TRT"] },
+      "layout":     { "row_structure": "parameter_stat" }
+    }
+  }'
+  expect_error(kst_compile(bad), "Invalid table specification|not a valid R identifier")
+})
+
+test_that("labels shorter than variables pad with variable names", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "labs": {
+          "variables": ["AGE", "WEIGHT"],
+          "labels": ["Age (years)"]
+        }
+      },
+      "statistics": { "n": { "fun": "length" } },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl('"Age \\(years\\)"', code))
+  expect_true(grepl('"WEIGHT"', code))
+  expect_true(grepl("\\.c1\\s*=", code))
+  expect_true(grepl("\\.c2\\s*=", code))
+  expect_equal(lengths(regmatches(code, gregexpr("dplyr::summarize\\(", code))), 1L)
+})
+
+test_that("apply_to that excludes every parameter errors at compile time", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "n": { "fun": "length", "apply_to": ["other_param"] }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  expect_error(kst_compile(spec), "No statistics chunks generated")
+})
+
+test_that("hierarchical emits .drop = FALSE when include_missing_levels is true", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "soc": {
+          "variable": "AESOC",
+          "nested": { "pt": { "variable": "AEDECOD" } }
+        }
+      },
+      "statistics": { "n": { "fun": "length" } },
+      "groups":  { "by": ["TRT01P"], "include_missing_levels": true },
+      "layout":  { "row_structure": "hierarchical" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.drop = FALSE", code))
+})
+
+# ── Denominator emission ──────────────────────────────────────────────────────
+
+test_that("denominator type n emits dplyr::n()", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "n" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("count_pct\\(AGE, denom = dplyr::n\\(\\)\\)", code))
+  expect_false(grepl("\\.kst_d", code))
+})
+
+test_that("denominator type n_distinct emits n_distinct(var)", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "n_distinct", "variable": "USUBJID" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl(
+    "count_pct\\(AGE, denom = dplyr::n_distinct\\(USUBJID\\)\\)", code))
+})
+
+test_that("denominator data_n emits prep + join + first(.kst_d)", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "sex": { "variable": "SEX", "label": "Sex" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "data_n",
+            "by": ["TRT01P"],
+            "distinct": "USUBJID"
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P", "SEX"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.kst_d1 <- data \\|>", code))
+  expect_true(grepl("group_by\\(TRT01P\\)", code))
+  expect_true(grepl("n_distinct\\(USUBJID\\)", code))
+  expect_true(grepl("left_join\\(\\.kst_d1", code))
+  expect_true(grepl("denom = dplyr::first\\(\\.kst_d1\\)", code))
+})
+
+test_that("denominator external with by emits rename join", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.kst_d1 <- adsl_n \\|>", code))
+  expect_true(grepl("rename\\(\\.kst_d1 = N\\)", code))
+  expect_true(grepl("left_join\\(\\.kst_d1", code))
+  expect_true(grepl("denom = dplyr::first\\(\\.kst_d1\\)", code))
+})
+
+test_that("denominator external scalar emits bare name", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": { "type": "external", "name": "N_total" }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("count_pct\\(AGE, denom = N_total\\)", code))
+  expect_false(grepl("\\.kst_d", code))
+})
+
+test_that("identical denominators share one prep table", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "age": { "variable": "AGE", "label": "Age" },
+        "bmi": { "variable": "BMIBL", "label": "BMI" }
+      },
+      "statistics": {
+        "pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_equal(lengths(regmatches(code, gregexpr("\\.kst_d1 <-", code))), 1L)
+  expect_false(grepl("\\.kst_d2", code))
+  expect_equal(lengths(regmatches(code, gregexpr("first\\(\\.kst_d1\\)", code))), 2L)
+})
+
+test_that("hierarchical denominator external joins into both chunks", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "soc": {
+          "variable": "AESOC",
+          "nested": { "pt": { "variable": "AEDECOD" } }
+        }
+      },
+      "statistics": {
+        "n_pct": {
+          "fun": "count_pct",
+          "denominator": {
+            "type": "external",
+            "name": "adsl_n",
+            "value": "N",
+            "by": ["TRT01P"]
+          }
+        }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "hierarchical" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.kst_d1 <- adsl_n \\|>", code))
+  expect_equal(lengths(regmatches(code, gregexpr("left_join\\(\\.kst_d1", code))), 2L)
+  expect_true(grepl("denom = dplyr::first\\(\\.kst_d1\\)", code))
 })

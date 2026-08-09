@@ -3,7 +3,6 @@
 export(kst_apply_metadata)
 export(kst_compile)
 export(kst_extract_metadata)
-export(kst_generate_table)
 export(kst_save)
 export(kst_validate_spec)
 importFrom(dplyr,arrange)

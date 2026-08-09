@@ -1,0 +1,56 @@
+url: https://crow16384.github.io/ksTable/
+
+template:
+  bootstrap: 5
+  light-switch: true
+
+home:
+  title: ksTable — JSON DSL to dplyr for clinical tables
+  description: >
+    Compile declarative JSON table specifications into plain dplyr/tidyr
+    R scripts for clinical tables (ksTFL-ready).
+
+figures:
+  square: false
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github, lightswitch]
+  components:
+    intro:
+      text: Get started
+      href: articles/getting_started.html
+    articles:
+      text: Articles
+      menu:
+        - text: Getting started
+          href: articles/getting_started.html
+        - text: DSL reference
+          href: articles/dsl_reference.html
+
+reference:
+  - title: Compile and save
+    desc: Validate a JSON spec and emit or save a dplyr/tidyr script.
+    contents:
+      - kst_compile
+      - kst_save
+      - kst_validate_spec
+  - title: Metadata helpers
+    desc: Factor levels and ksformat labels applied before eval.
+    contents:
+      - kst_extract_metadata
+      - kst_apply_metadata
+  - title: Package
+    contents:
+      - ksTable-package
+
+articles:
+  - title: Guides
+    navbar: ~
+    contents:
+      - getting_started
+      - dsl_reference
+
+news:
+  cran_dates: false

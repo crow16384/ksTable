@@ -1,7 +1,10 @@
 # ksTable Design Review
 
 **Date**: 2026-07-05  
-**Status**: Post-PoC update
+**Status**: Historical (Post-PoC). Current shipped API uses bare function calls
+(not `calc_fns` registries) and caller-driven `kst_extract_metadata` /
+`kst_apply_metadata`. See [ARCHITECTURE.md](ARCHITECTURE.md) and
+[PLAN.md](PLAN.md) for the live design.
 
 ---
 
@@ -45,7 +48,7 @@ Responses to questions raised in the initial review:
   ) |>
   dplyr::mutate(
     .param      = "Age (years)",
-    .stat_label = "n"
+    .stat = "n"
   )
 
 .chunks[[2L]] <- .data |>
@@ -56,14 +59,14 @@ Responses to questions raised in the initial review:
   ) |>
   dplyr::mutate(
     .param      = "Age (years)",
-    .stat_label = "Mean (SD)"
+    .stat = "Mean (SD)"
   )
 
 .long <- dplyr::bind_rows(.chunks)
 
 tidyr::pivot_wider(
   .long,
-  id_cols     = c(.param, .stat_label),
+  id_cols     = c(.param, .stat),
   names_from  = c(TRT01P),
   values_from = .value
 )
@@ -75,7 +78,7 @@ tidyr::pivot_wider(
 
 ```
 # A tibble: 2 × 5
-  .param      .stat_label Drug A       Drug B       Placebo
+  .param      .stat Drug A       Drug B       Placebo
 1 Age (years) n           160          160          160
 2 Age (years) Mean (SD)   44.9 (11.37) 44.9 (11.84) 44.5 (11.96)
 ```
@@ -149,24 +152,23 @@ This eliminates Phases 1–4 as currently scoped (C++ parser, validator, metadat
 
 ---
 
-## 4. `calc_functions` Contract — Clarified
+## 4. Function Resolution Contract — Clarified
 
-The calc function contract is simpler than the plan implies. There is no global registry. The user passes a **named list** where each key matches a `"fun"` value in the JSON `statistics` section:
+The runtime contract is simpler than the plan implies. There is no global
+registry and no calc-function list argument. Functions referenced by
+`statistics[].fun` and `statistics[].format.fun` are resolved from the parent
+chain of the evaluation environment used to run compiled code:
 
 ```r
-kst_generate_table(
-  json_spec = spec,
-  data      = adsl,
-  calc_functions = list(
-    count   = function(data) sum(!is.na(data)),
-    mean_sd = function(data) sprintf("%.1f (%.2f)", mean(data, na.rm=TRUE), sd(data, na.rm=TRUE))
-  )
-)
+code <- kst_compile(spec)
+env  <- new.env(parent = environment())
+env$data <- adsl
+result <- eval(parse(text = code), envir = env)
 ```
 
 **Consequences:**
 
-1. **Drop `kst_register_calc` / `kst_list_calc` / `kst_get_calc`** from the plan (IR-5). A global mutable registry adds complexity and makes functions hard to test in isolation. Explicit list argument is cleaner.
+1. **Drop `kst_register_calc` / `kst_list_calc` / `kst_get_calc`** from the plan (IR-5). A global mutable registry adds complexity and makes functions hard to test in isolation.
 
 2. **Two function shapes** exist in the DSL and need to be documented as distinct concepts:
 
@@ -177,7 +179,7 @@ kst_generate_table(
 
    The `format` step is separate from the `calc` step — this is correct in the DSL design. It should be stated explicitly in the contract doc to avoid confusion.
 
-3. **Sort before format.** Because `calc_functions` can return raw numeric values (e.g., `list(mean=45.2, sd=12.3)`), and the `format` spec (template / custom / sprintf) converts them to strings, sorting by value must happen **before** the format step. The code generator must ensure: `compute raw → arrange → format → pivot`. This ordering should be pinned as FR-4 behavior.
+3. **Sort before format.** Because calc functions can return raw numeric values (e.g., `list(mean=45.2, sd=12.3)`), and the `format` spec (template / custom / sprintf) converts them to strings, sorting by value must happen **before** the format step. The code generator must ensure: `compute raw → arrange → format → pivot`. This ordering should be pinned as FR-4 behavior.
 
 ---
 

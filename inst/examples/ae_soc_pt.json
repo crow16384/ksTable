@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "ae_soc_pt",
+    "title": "Adverse Events by SOC and PT",
+    "parameter": {
+      "soc": {
+        "variable": "AESOC",
+        "nested": {
+          "pt": { "variable": "AEDECOD" }
+        }
+      }
+    },
+    "statistics": {
+      "n": { "fun": "length" }
+    },
+    "groups": {
+      "by": ["TRT01P"]
+    },
+    "layout": {
+      "row_structure": "hierarchical",
+      "column_structure": "groups"
+    }
+  }
+}

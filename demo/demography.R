@@ -7,7 +7,7 @@
 ###   - Multiple parameters in one spec
 ###   - Built-in R functions with extra arguments ("args")
 ###   - User-defined calc + format functions for multi-part statistics
-###   - kst_validate_spec(), kst_compile(), kst_generate_table()
+###   - kst_validate_spec(), kst_compile(), explicit eval(parse(...))
 
 library(ksTable)
 
@@ -58,29 +58,24 @@ spec <- '{
     },
     "statistics": {
       "n": {
-        "fun":   "count",
-        "label": "N"
+        "fun":   "count"
       },
       "mean_sd": {
         "fun":    "mean_sd",
-        "label":  "Mean (SD)",
         "format": { "type": "custom", "fun": "format_mean_sd" }
       },
       "median_iqr": {
         "fun":    "median_iqr",
-        "label":  "Median [Q1, Q3]",
         "format": { "type": "custom", "fun": "format_median_iqr" }
       },
       "min": {
         "fun":    "min",
         "args":   { "na.rm": true },
-        "label":  "Min",
         "format": { "type": "sprintf", "pattern": "%.1f" }
       },
       "max": {
         "fun":    "max",
         "args":   { "na.rm": true },
-        "label":  "Max",
         "format": { "type": "sprintf", "pattern": "%.1f" }
       }
     },
@@ -109,7 +104,10 @@ cat("\n\n")
 
 ## -- 6. Generate table -------------------------------------------------------
 
-demog <- kst_generate_table(spec, adsl)
+code <- kst_compile(spec)
+env  <- new.env(parent = environment())
+env$data <- adsl
+demog <- eval(parse(text = code), envir = env)
 
 cat("-- Demography Table ----------------------------------------------------\n")
 print(demog, n = Inf, width = 120)
@@ -122,5 +120,5 @@ print(demog, n = Inf, width = 120)
 ##   env  <- new.env(parent = environment())
 ##   env$data <- adsl
 ##   eval(parse(text = code), envir = env)
-##   env$.chunks   # list of per-stat tibbles before bind_rows
-##   env$.long     # long-format assembled table
+##   env$.raw    # wide summarize + formatted temp columns (.c1, .c2, ...)
+##   env$.long   # long-format before pivot_wider

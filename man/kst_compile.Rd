@@ -4,33 +4,37 @@
 \alias{kst_compile}
 \title{Compile a JSON DSL table spec to a plain R script}
 \usage{
-kst_compile(json_spec, metadata = NULL)
+kst_compile(json_spec)
 }
 \arguments{
 \item{json_spec}{JSON string or path to a \code{.json} file.}
-
-\item{metadata}{Optional pre-extracted metadata list from
-\code{\link{kst_extract_metadata}}. When \code{NULL} (default) and the spec
-contains \code{groups.format} entries, metadata is extracted automatically
-when ksformat is installed.}
 }
 \value{
 \code{character(1)} — a plain R script ready to be read, modified,
 saved, or executed with \code{eval(parse(text = code), envir = env)}.
 }
 \description{
-Reads a declarative JSON table specification and generates a human-readable
-dplyr/tidyr R script. The script expects a variable named \code{data} in its
-evaluation environment. Calc and format functions referenced in the spec (e.g.
+Reads a declarative JSON table specification, validates it (same checks as
+\code{\link{kst_validate_spec}}), and generates a human-readable dplyr/tidyr
+R script. The script expects a variable named \code{data} in its evaluation
+environment. Calc and format functions referenced in the spec (e.g.
 \code{"fun": "count"}) are emitted as bare calls and resolved from the same
 environment at runtime — no lists to build, no registry to populate.
+}
+\details{
+Metadata (factor levels, ksformat labels) is \strong{not} applied during
+compile. Use \code{\link{kst_extract_metadata}} and
+\code{\link{kst_apply_metadata}} on \code{data} before evaluating the script
+when \code{include_missing_levels} or group-header formatting is needed.
+Optional \code{groups.format} entries in the JSON are documentation for that
+pre-eval step (pass them as \code{format_map}); the compiler does not read them.
 }
 \examples{
 spec <- '{
   "schema_version": "1.0",
   "table_spec": {
     "parameter": { "age": { "variable": "AGE", "label": "Age (years)" } },
-    "statistics": { "n": { "fun": "count", "label": "n" } },
+    "statistics": { "n": { "fun": "count" } },
     "groups": { "by": ["TRT"] },
     "layout": { "row_structure": "parameter_stat", "column_structure": "groups" }
   }
@@ -39,5 +43,6 @@ cat(kst_compile(spec))
 
 }
 \seealso{
-\code{\link{kst_generate_table}}, \code{\link{kst_validate_spec}}
+\code{\link{kst_save}}, \code{\link{kst_validate_spec}},
+\code{\link{kst_extract_metadata}}, \code{\link{kst_apply_metadata}}
 }
