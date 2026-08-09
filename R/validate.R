@@ -36,7 +36,7 @@
 #'       \code{"jsonvalidate"}, \code{"manual"}, or \code{"none"}.}
 #'   }
 #'
-#' @seealso \code{\link{kst_compile}}, \code{\link{kst_generate_table}}
+#' @seealso \code{\link{kst_compile}}, \code{\link{kst_save}}
 #'
 #' @examples
 #' spec <- '{
@@ -157,6 +157,15 @@ validate_structure_manual <- function(json_spec) {
   # statistics: fun required; format type + dependent field required
   for (sn in names(ts$statistics)) {
     s <- ts$statistics[[sn]]
+
+    stat_allowed <- c("fun", "args", "apply_to", "format")
+    stat_extra   <- setdiff(names(s), stat_allowed)
+    if (length(stat_extra) > 0L) {
+      errors <- c(errors, sprintf(
+        "/table_spec/statistics/%s: must NOT have additional properties: %s",
+        sn, paste(stat_extra, collapse = ", ")))
+    }
+
     if (is.null(s$fun))
       errors <- c(errors, sprintf(
         "Missing required field: /table_spec/statistics/%s/fun", sn))

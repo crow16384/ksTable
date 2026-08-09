@@ -86,8 +86,7 @@ ae_spec <- '{
     },
     "statistics": {
       "n": {
-        "fun":   "length",
-        "label": "n events"
+        "fun":   "length"
       }
     },
     "groups": {
@@ -115,7 +114,10 @@ cat("\n\n")
 
 ## -- 6. Generate table ---------------------------------------------------------
 
-ae_table <- kst_generate_table(ae_spec, adae)
+code <- kst_compile(ae_spec)
+env  <- new.env(parent = environment())
+env$data <- adae
+ae_table <- eval(parse(text = code), envir = env)
 
 cat("-- Adverse Events Table ------------------------------------------------\n")
 print(ae_table, n = Inf, width = 120)
@@ -137,10 +139,7 @@ print(gi, n = Inf, width = 120)
 
 ## -- 8. Step-through: inspect intermediates ------------------------------------
 
-code <- kst_compile(ae_spec)
-env  <- new.env(parent = environment())
-env$data <- adae
-eval(parse(text = code), envir = env)
+# Reuse the same environment from section 6.
 
 cat("\n-- Intermediate objects in execution env -------------------------------\n")
 cat("Objects: ", paste(ls(env, all.names = TRUE), collapse = ", "), "\n")

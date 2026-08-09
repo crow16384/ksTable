@@ -2,7 +2,7 @@ Package: ksTable
 Type: Package
 Title: JSON DSL to Dplyr Code Generator for Clinical Tables
 Version: 0.1.0
-Date: 2026-07-05
+Date: 2026-08-09
 Authors@R: person(
     "Vladimir", "Larchenko",
     email = "crow16384@gmail.com",
@@ -15,7 +15,8 @@ Description: Reads declarative JSON table specifications and uses a pure-R
     produces pre-formatted tibbles ready for rendering with the ksTFL package.
     Supports parameter-statistic and hierarchical (SOC -> PT) table layouts,
     multi-way stratification, ksformat integration, and multiple format methods
-    (sprintf, template, custom function, ksformat). All JSON-derived identifiers
+    (sprintf, template, custom function, ksformat). Template formats require the
+    suggested 'glue' package at evaluation time. All JSON-derived identifiers
     are validated before code emission to prevent injection attacks (SR-1).
 License: MIT + file LICENSE
 Encoding: UTF-8

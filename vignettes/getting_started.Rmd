@@ -10,8 +10,7 @@ vignette: >
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment  = "#>",
-  eval     = FALSE
+  comment  = "#>"
 )
 ```
 
@@ -96,11 +95,12 @@ the JSON spec via the optional `"args"` field (see below).
 set.seed(42)
 n <- 480L
 
-adsl <- tibble::tibble(
+adsl <- data.frame(
   USUBJID = sprintf("%03d-%04d", rep(1:3, each = n %/% 3L), seq_len(n)),
   AGE     = round(rnorm(n, 45, 12)),
   SEX     = sample(c("M", "F"), n, replace = TRUE),
-  TRT01P  = rep(c("Placebo", "Drug A", "Drug B"), each = n %/% 3L)
+  TRT01P  = rep(c("Placebo", "Drug A", "Drug B"), each = n %/% 3L),
+  stringsAsFactors = FALSE
 )
 ```
 
@@ -109,9 +109,9 @@ adsl <- tibble::tibble(
 Three statistics are requested:
 
 * **n** — a user-defined `count()` function.
-* **Mean (SD)** — a user-defined `mean_sd()` returning a named list, formatted
+* **mean_sd** — a user-defined `mean_sd()` returning a named list, formatted
   by a user-defined `format_mean_sd()`.
-* **Median** — the built-in `median()` with `na.rm = TRUE` supplied via `"args"`.
+* **median** — the built-in `median()` with `na.rm = TRUE` supplied via `"args"`.
 
 ```{r demog-json}
 demog_spec <- '{
@@ -124,18 +124,15 @@ demog_spec <- '{
     },
     "statistics": {
       "n": {
-        "fun":   "count",
-        "label": "n"
+        "fun":   "count"
       },
       "mean_sd": {
         "fun":    "mean_sd",
-        "label":  "Mean (SD)",
         "format": { "type": "custom", "fun": "format_mean_sd" }
       },
       "median": {
         "fun":   "median",
-        "args":  { "na.rm": true },
-        "label": "Median"
+        "args":  { "na.rm": true }
       }
     },
     "groups": {
@@ -171,7 +168,7 @@ cat(code)
   dplyr::mutate(
     .value      = as.character(.value_raw),
     .param      = "Age (years)",
-    .stat_label = "n",
+    .stat = "n",
     .value_raw  = NULL
   )
 
@@ -184,7 +181,7 @@ cat(code)
   dplyr::mutate(
     .value      = vapply(.value_raw, format_mean_sd, character(1L)),
     .param      = "Age (years)",
-    .stat_label = "Mean (SD)",
+    .stat = "mean_sd",
     .value_raw  = NULL
   )
 
@@ -197,7 +194,7 @@ cat(code)
   dplyr::mutate(
     .value      = as.character(.value_raw),
     .param      = "Age (years)",
-    .stat_label = "Median",
+    .stat = "median",
     .value_raw  = NULL
   )
 
@@ -205,7 +202,7 @@ cat(code)
 
 tidyr::pivot_wider(
   .long,
-  id_cols     = c(.param, .stat_label),
+  id_cols     = c(.param, .stat),
   names_from  = c(TRT01P),
   values_from = .value
 )
@@ -214,16 +211,19 @@ tidyr::pivot_wider(
 ### Generate the table
 
 ```{r generate-demog}
-result <- kst_generate_table(demog_spec, adsl)
+code <- kst_compile(demog_spec)
+env <- new.env(parent = environment())
+env$data <- adsl
+result <- eval(parse(text = code), envir = env)
 print(result)
 ```
 
 ```
 # A tibble: 3 × 5
-  .param      .stat_label `Drug A`     `Drug B`     Placebo
-1 Age (years) n           160          160          160
-2 Age (years) Mean (SD)   44.9 (11.37) 44.9 (11.84) 44.5 (11.96)
-3 Age (years) Median      45           44.5         44
+  .param      .stat   `Drug A`     `Drug B`     Placebo
+1 Age (years) n       160          160          160
+2 Age (years) mean_sd 44.9 (11.37) 44.9 (11.84) 44.5 (11.96)
+3 Age (years) median  45           44.5         44
 ```
 
 ---
@@ -246,11 +246,12 @@ ae_pt  <- ifelse(
   sample(c("Myocardial infarction", "Angina pectoris"), n_ae, replace = TRUE),
   sample(c("Nausea", "Diarrhea"), n_ae, replace = TRUE)
 )
-ae <- tibble::tibble(
+ae <- data.frame(
   USUBJID = ae_ids,
   TRT01P  = adsl$TRT01P[match(ae_ids, adsl$USUBJID)],
   AESOC   = ae_soc,
-  AEDECOD = ae_pt
+  AEDECOD = ae_pt,
+  stringsAsFactors = FALSE
 )
 ```
 
@@ -274,8 +275,7 @@ ae_spec <- '{
     "statistics": {
       "n": {
         "fun":   "length",
-        "args":  {},
-        "label": "n"
+        "args":  {}
       }
     },
     "groups": {
@@ -293,13 +293,16 @@ ae_spec <- '{
 ### Generate the table
 
 ```{r generate-ae}
-ae_result <- kst_generate_table(ae_spec, ae)
+ae_code <- kst_compile(ae_spec)
+ae_env <- new.env(parent = environment())
+ae_env$data <- ae
+ae_result <- eval(parse(text = ae_code), envir = ae_env)
 print(ae_result)
 ```
 
 ```
 # A tibble: 6 × 7
-  .parent             .is_child .row_label           .stat_label Drug A Drug B Placebo
+  .parent             .is_child .row_label           .stat Drug A Drug B Placebo
 1 Cardiac disorders   FALSE     Cardiac disorders    n           36     39     34
 2 Cardiac disorders   TRUE      Angina pectoris      n           14     21     21
 3 Cardiac disorders   TRUE      Myocardial infarction n          22     18     13
@@ -315,9 +318,9 @@ to apply indentation and header formatting during rendering.
 
 ## Step-through debugging
 
-`kst_generate_table()` runs the script in `new.env(parent = environment())`.
-For interactive debugging, you can set up the same environment manually and
-inspect every intermediate object:
+Run the compiled script in `new.env(parent = environment())`.
+For interactive debugging, set up the environment manually and inspect
+intermediate objects:
 
 ```{r debug}
 code <- kst_compile(demog_spec)
@@ -349,10 +352,10 @@ function.  Pass extra arguments via `"args"` in the JSON spec:
 
 ```json
 "statistics": {
-  "n":      { "fun": "sum",      "args": { "na.rm": true  }, "label": "N"      },
-  "median": { "fun": "median",   "args": { "na.rm": true  }, "label": "Median" },
-  "q25":    { "fun": "quantile", "args": { "probs": 0.25, "na.rm": true }, "label": "Q1" },
-  "sd":     { "fun": "sd",       "args": { "na.rm": true  }, "label": "SD"     }
+  "n":      { "fun": "sum",      "args": { "na.rm": true  } },
+  "median": { "fun": "median",   "args": { "na.rm": true  } },
+  "q25":    { "fun": "quantile", "args": { "probs": 0.25, "na.rm": true } },
+  "sd":     { "fun": "sd",       "args": { "na.rm": true  } }
 }
 ```
 
@@ -416,9 +419,7 @@ Compilation is ~130–150 µs per call (pure R string assembly). At that rate,
 compiling is negligible overhead even in loops or Shiny apps.
 
 ```{r benchmark}
-system.time(for (i in 1:10000L) kst_compile(demog_spec))
-# user  system elapsed
-# 1.3   0.0     1.3      → ~130 µs per call
+system.time(for (i in 1:1000L) kst_compile(demog_spec))
 ```
 
 ---
@@ -428,5 +429,6 @@ system.time(for (i in 1:10000L) kst_compile(demog_spec))
 * See `vignette("dsl_reference")` for the complete JSON schema reference.
 * The generated script can be saved to a `.R` file and used independently of
   the package — useful for audit trails in regulated environments.
-* Pass `envir = rlang::caller_env()` to `kst_generate_table()` explicitly if
-  you need precise control over function lookup scope.
+* Set the parent of your eval environment (for example,
+  `new.env(parent = environment())`) when you need precise control over
+  function lookup scope.

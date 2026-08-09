@@ -44,5 +44,5 @@ kst_validate_spec(spec)
 
 }
 \seealso{
-\code{\link{kst_compile}}, \code{\link{kst_generate_table}}
+\code{\link{kst_compile}}, \code{\link{kst_save}}
 }

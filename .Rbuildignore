@@ -7,3 +7,5 @@
 ^PLAN\.md$
 ^REQUIREMENTS\.md$
 ^LICENSE\.md$
+^\.github$
+^\.serena$

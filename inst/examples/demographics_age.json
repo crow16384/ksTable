@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "table_spec": {
+    "id": "demographics_age",
+    "title": "Age by Treatment Group",
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n": { "fun": "count" },
+      "mean_sd": {
+        "fun": "mean_sd",
+        "format": { "type": "custom", "fun": "format_mean_sd" }
+      },
+      "median": {
+        "fun": "median",
+        "args": { "na.rm": true },
+        "format": { "type": "sprintf", "pattern": "%.1f" }
+      }
+    },
+    "groups": {
+      "by": ["TRT01P"],
+      "include_missing_levels": true
+    },
+    "layout": {
+      "row_structure": "parameter_stat",
+      "column_structure": "groups"
+    }
+  }
+}

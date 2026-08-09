@@ -1,31 +1,36 @@
 # R/compile.R ──────────────────────────────────────────────────────────────
-# Public API: kst_compile() and kst_generate_table().
+# Public API: kst_compile() and kst_save().
 
 #' Compile a JSON DSL table spec to a plain R script
 #'
-#' Reads a declarative JSON table specification and generates a human-readable
-#' dplyr/tidyr R script. The script expects a variable named \code{data} in its
-#' evaluation environment. Calc and format functions referenced in the spec (e.g.
+#' Reads a declarative JSON table specification, validates it (same checks as
+#' \code{\link{kst_validate_spec}}), and generates a human-readable dplyr/tidyr
+#' R script. The script expects a variable named \code{data} in its evaluation
+#' environment. Calc and format functions referenced in the spec (e.g.
 #' \code{"fun": "count"}) are emitted as bare calls and resolved from the same
 #' environment at runtime — no lists to build, no registry to populate.
 #'
+#' Metadata (factor levels, ksformat labels) is \strong{not} applied during
+#' compile. Use \code{\link{kst_extract_metadata}} and
+#' \code{\link{kst_apply_metadata}} on \code{data} before evaluating the script
+#' when \code{include_missing_levels} or group-header formatting is needed.
+#' Optional \code{groups.format} entries in the JSON are documentation for that
+#' pre-eval step (pass them as \code{format_map}); the compiler does not read them.
+#'
 #' @param json_spec  JSON string or path to a \code{.json} file.
-#' @param metadata   Optional pre-extracted metadata list from
-#'   \code{\link{kst_extract_metadata}}. When \code{NULL} (default) and the spec
-#'   contains \code{groups.format} entries, metadata is extracted automatically
-#'   when ksformat is installed.
 #'
 #' @return \code{character(1)} — a plain R script ready to be read, modified,
 #'   saved, or executed with \code{eval(parse(text = code), envir = env)}.
 #'
-#' @seealso \code{\link{kst_generate_table}}, \code{\link{kst_validate_spec}}
+#' @seealso \code{\link{kst_save}}, \code{\link{kst_validate_spec}},
+#'   \code{\link{kst_extract_metadata}}, \code{\link{kst_apply_metadata}}
 #'
 #' @examples
 #' spec <- '{
 #'   "schema_version": "1.0",
 #'   "table_spec": {
 #'     "parameter": { "age": { "variable": "AGE", "label": "Age (years)" } },
-#'     "statistics": { "n": { "fun": "count", "label": "n" } },
+#'     "statistics": { "n": { "fun": "count" } },
 #'     "groups": { "by": ["TRT"] },
 #'     "layout": { "row_structure": "parameter_stat", "column_structure": "groups" }
 #'   }
@@ -33,90 +38,12 @@
 #' cat(kst_compile(spec))
 #'
 #' @export
-kst_compile <- function(json_spec, metadata = NULL) {
+kst_compile <- function(json_spec) {
   json_spec <- read_json_spec(json_spec)
-  spec      <- jsonlite::fromJSON(json_spec, simplifyVector = FALSE)
+  assert_valid_spec(json_spec)
+  spec <- jsonlite::fromJSON(json_spec, simplifyVector = FALSE)
   compile_ts(spec$table_spec)
 }
-
-#' Generate a formatted table from a JSON DSL spec and a data frame
-#'
-#' Compiles the spec with \code{\link{kst_compile}}, then evaluates the
-#' generated script in an isolated environment whose parent is the caller's
-#' frame. This means any calc and format functions defined in the calling
-#' environment (or any parent, including attached packages) are automatically
-#' visible to the generated code.
-#'
-#' Intermediate objects (\code{.chunks}, \code{.long}) are created inside the
-#' isolated environment and do not pollute the caller's workspace.
-#'
-#' @param json_spec  JSON string or path to a \code{.json} file.
-#' @param data       Input data frame / tibble. Must contain all column names
-#'                   referenced in the spec as \code{variable} and \code{by}.
-#' @param metadata   Optional metadata list from \code{\link{kst_extract_metadata}}.
-#' @param denominator Optional named list or data frame made available as
-#'   \code{denominator} in the evaluation environment.  Calc functions can
-#'   look up arm-level denominators using \code{dplyr::cur_group()} to obtain
-#'   the current grouping key:
-#'   \preformatted{
-#'   n_pct <- function(data) {
-#'     arm <- as.list(dplyr::cur_group())$TRT01P
-#'     N   <- denominator$N[denominator$TRT01P == arm]
-#'     list(n = length(unique(data)), pct = 100 * length(unique(data)) / N)
-#'   }
-#'   }
-#' @param envir      Environment used to resolve calc / format functions.
-#'                   Defaults to the caller's frame so that any locally-defined
-#'                   functions are visible without explicit passing.
-#'
-#' @return A tibble with all display-value columns as \code{character}.
-#'   Layout columns (\code{.param}, \code{.stat_label} for \code{parameter_stat};
-#'   \code{.parent}, \code{.is_child}, \code{.row_label}, \code{.stat_label} for
-#'   \code{hierarchical}) identify each row.
-#'
-#' @seealso \code{\link{kst_compile}}, \code{\link{kst_validate_spec}}
-#'
-#' @examples
-#' \dontrun{
-#' # Define calc / format functions in the current environment
-#' count   <- function(data) sum(!is.na(data))
-#' mean_sd <- function(data) list(mean = mean(data, na.rm = TRUE),
-#'                                sd   = sd(data,   na.rm = TRUE))
-#' format_mean_sd <- function(x) sprintf("%.1f (%.2f)", x$mean, x$sd)
-#'
-#' result <- kst_generate_table(spec, adsl)
-#' }
-#'
-#' @export
-kst_generate_table <- function(json_spec, data, metadata = NULL,
-                               denominator = NULL,
-                               envir = parent.frame()) {
-  raw_json <- read_json_spec(json_spec)
-  ts       <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)$table_spec
-
-  # Auto-extract and apply ksformat group-variable metadata when
-  # groups.format is present in the spec and ksformat is installed.
-  # This converts raw codes to display labels and sets factor levels,
-  # enabling formatted column headers and include_missing_levels = true.
-  if (is.null(metadata) &&
-      !is.null(ts$groups$format) &&
-      requireNamespace("ksformat", quietly = TRUE)) {
-    gvars <- unlist(ts$groups$by)
-    fmap  <- as.list(ts$groups$format)          # variable -> ksformat name
-    meta  <- kst_extract_metadata(data, gvars, format_map = fmap)
-    data  <- kst_apply_metadata(data, meta)
-  } else if (!is.null(metadata)) {
-    data <- kst_apply_metadata(data, metadata)
-  }
-
-  code     <- compile_ts(ts)
-  env      <- new.env(parent = envir)
-  env$data <- data
-  if (!is.null(denominator)) env$denominator <- denominator
-  eval(parse(text = code), envir = env)
-}
-
-# ── Internal helpers ───────────────────────────────────────────────────────
 
 # Accept a JSON string or a file path; always return a JSON string.
 read_json_spec <- function(x) {
@@ -128,6 +55,17 @@ read_json_spec <- function(x) {
     x <- paste(readLines(x, warn = FALSE), collapse = "\n")
   }
   x
+}
+
+# Fail fast with collected validation errors (shared by compile + save).
+assert_valid_spec <- function(json_spec) {
+  v <- kst_validate_spec(json_spec)
+  if (!isTRUE(v$valid)) {
+    stop("Invalid table specification:\n  ",
+         paste(v$errors, collapse = "\n  "),
+         call. = FALSE)
+  }
+  invisible(v)
 }
 
 #' Save a compiled table script to an R file
@@ -146,14 +84,12 @@ read_json_spec <- function(x) {
 #'
 #' @param json_spec  JSON string or path to a \code{.json} file.
 #' @param file       Output path (typically a \code{.R} file).
-#' @param metadata   Optional metadata list; passed to
-#'   \code{\link{kst_compile}} (currently unused by the compiler but reserved).
 #' @param overwrite  Logical. If \code{FALSE} (default), stops when \code{file}
 #'   already exists, protecting manually-edited scripts.
 #'
 #' @return The normalised absolute path to the written file, invisibly.
 #'
-#' @seealso \code{\link{kst_compile}}, \code{\link{kst_generate_table}}
+#' @seealso \code{\link{kst_compile}}, \code{\link{kst_validate_spec}}
 #'
 #' @examples
 #' spec <- '{
@@ -171,14 +107,15 @@ read_json_spec <- function(x) {
 #' cat(readLines(tmp), sep = "\n")
 #'
 #' @export
-kst_save <- function(json_spec, file, metadata = NULL, overwrite = FALSE) {
+kst_save <- function(json_spec, file, overwrite = FALSE) {
   if (!overwrite && file.exists(file))
     stop("'", file, "' already exists. Use overwrite = TRUE to replace it.",
          call. = FALSE)
 
   raw_json <- read_json_spec(json_spec)
-  ts       <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)$table_spec
-  code     <- compile_ts(ts)
+  assert_valid_spec(raw_json)
+  ts   <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)$table_spec
+  code <- compile_ts(ts)
 
   ver   <- tryCatch(as.character(utils::packageVersion("ksTable")),
                     error = function(e) "?")

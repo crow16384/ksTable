@@ -142,9 +142,14 @@
         "args": {
           "$ref": "#/definitions/function_args"
         },
-        "label": {
-          "type": "string",
-          "description": "Display label shown in the .stat_label column of the output. Defaults to the statistic key if omitted."
+        "apply_to": {
+          "type": "array",
+          "description": "Optional allow-list controlling which parameters this statistic applies to. Each entry can be a parameter ID (e.g. 'cont') or a variable name (e.g. 'AGE'). If omitted, the statistic applies to all parameters.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z.][A-Za-z0-9._]*$"
+          }
         },
         "format": {
           "$ref": "#/definitions/format_spec"
@@ -233,12 +238,12 @@
         },
         "include_missing_levels": {
           "type": "boolean",
-          "description": "When true, the generator emits group_by(..., .drop = FALSE) so that factor levels with zero observations in a group still appear as rows (with the default formatter's value, e.g. '0'). Requires the grouping columns to be factors with the complete set of levels before kst_generate_table() is called. Use kst_apply_metadata() to ensure correct factor levels.",
+          "description": "When true, the generator emits group_by(..., .drop = FALSE) so that factor levels with zero observations in a group still appear as rows (with the default formatter's value, e.g. '0'). Requires the grouping columns to be factors with the complete set of levels before evaluating compiled code. Use kst_apply_metadata() to ensure correct factor levels.",
           "default": false
         },
         "format": {
           "type": "object",
-          "description": "Optional map from a grouping column name to a ksformat VALUE format name. When provided, ksformat labels are used to display group header values instead of the raw data values.",
+          "description": "Optional documentation map from a grouping column name to a ksformat VALUE format name. Not applied by kst_compile(). Pass the same mapping as format_map to kst_extract_metadata() / kst_apply_metadata() before evaluating generated code so group headers use display labels and include_missing_levels works.",
           "additionalProperties": {
             "type": "string",
             "description": "ksformat VALUE format name, e.g. 'trt_fmt'."
@@ -255,7 +260,7 @@
       "properties": {
         "row_structure": {
           "type": "string",
-          "description": "Row organisation strategy.\n\n'parameter_stat' (default): one output row per parameter × statistic combination. The output tibble has columns .param (parameter label) and .stat_label (statistic label) as row identifiers.\n\n'hierarchical': parent rows followed by child rows nested beneath each parent, sorted alphabetically within each parent. Requires exactly one top-level parameter with exactly one nested child. The output tibble has columns .parent, .is_child (FALSE = parent row, TRUE = child row), .row_label, and .stat_label as row identifiers. The .parent and .is_child columns are consumed by ksTFL to apply indentation and group headers.",
+          "description": "Row organisation strategy.\n\n'parameter_stat' (default): one output row per parameter × statistic combination. The output tibble has columns .param (parameter label) and .stat (statistic key) as row identifiers.\n\n'hierarchical': parent rows followed by child rows nested beneath each parent, sorted alphabetically within each parent. Requires exactly one top-level parameter with exactly one nested child. The output tibble has columns .parent, .is_child (FALSE = parent row, TRUE = child row), .row_label, and .stat (statistic key) as row identifiers. The .parent and .is_child columns are consumed by ksTFL to apply indentation and group headers.",
           "enum": ["parameter_stat", "hierarchical"]
         },
         "column_structure": {

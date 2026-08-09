@@ -25,3 +25,7 @@ the metadata, including any levels absent from the data (required for
 \code{include_missing_levels = true} via \code{group_by(..., .drop = FALSE)}).
 }
 }
+\details{
+Call this on \code{data} \strong{before} evaluating code from
+\code{\link{kst_compile}}. Compile does not apply metadata.
+}

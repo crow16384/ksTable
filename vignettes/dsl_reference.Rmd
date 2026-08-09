@@ -100,7 +100,6 @@ how to compute and display it.
   "<stat_id>": {
     "fun":    "<function_name>",
     "args":   { "<arg>": <value>, ... },
-    "label":  "<display_label>",
     "format": { "type": "<type>", ... }
   }
 }
@@ -110,7 +109,6 @@ how to compute and display it.
 |-------|----------|-------------|
 | `fun` | **Yes** | Name of the calc function in the evaluation environment. Must be a valid R identifier. |
 | `args` | No | Extra named arguments passed to `fun` (see below). |
-| `label` | No | Display label. Defaults to the stat key. |
 | `format` | No | Format spec that converts the raw value to a display string. Defaults to `as.character()`. |
 
 ### `args`
@@ -146,7 +144,7 @@ display string `.value`. Every statistic has a formatter; the default when
 #### No format spec (default)
 
 ```json
-"n": { "fun": "count", "label": "n" }
+"n": { "fun": "count" }
 ```
 
 Generated: `.value = as.character(.value_raw)`
@@ -228,23 +226,27 @@ Defines how the input data is stratified into output columns.
 |-------|----------|-------------|
 | `by` | **Yes** | Array of column names to group by. Each must be a valid R identifier. |
 | `include_missing_levels` | No | If `true`, emit `group_by(..., .drop = FALSE)` so factor levels with zero observations still appear as rows. Requires the grouping columns to be factors with the desired levels set (use `kst_apply_metadata()`). Default `false`. |
-| `format` | No | Map from column name to ksformat format name, used to display group labels. |
+| `format` | No | Optional documentation map from column name to ksformat format name. **Not applied by `kst_compile()`.** Pass the same mapping as `format_map` to `kst_extract_metadata()` / `kst_apply_metadata()` before eval. |
 
 ### include_missing_levels
 
 To use `include_missing_levels: true`, ensure grouping columns are factors
-with all desired levels before calling `kst_generate_table()`:
+with all desired levels before evaluating compiled code:
 
 ```{r missing-levels}
 library(ksTable)
 
-# Extract factor levels (respects ksformat metadata if registered)
-meta <- kst_extract_metadata(adsl, "TRT01P")
+# Extract factor levels (pass groups.format mapping as format_map when using ksformat)
+meta <- kst_extract_metadata(adsl, "TRT01P",
+                             format_map = list(TRT01P = "trt_format"))
 
 # Re-level the data
 adsl_levelled <- kst_apply_metadata(adsl, meta)
 
-result <- kst_generate_table(spec, adsl_levelled)
+code <- kst_compile(spec)
+env <- new.env(parent = environment())
+env$data <- adsl_levelled
+result <- eval(parse(text = code), envir = env)
 ```
 
 ---
@@ -267,8 +269,8 @@ result <- kst_generate_table(spec, adsl_levelled)
 
 | Value | Description | Output rows |
 |-------|-------------|-------------|
-| `"parameter_stat"` | One row per parameter × statistic combination. | `.param`, `.stat_label` columns. |
-| `"hierarchical"` | Parent rows + child rows (e.g., SOC → PT). Requires exactly one `nested` parameter. | `.parent`, `.is_child`, `.row_label`, `.stat_label` columns. |
+| `"parameter_stat"` | One row per parameter × statistic combination. | `.param`, `.stat` columns. |
+| `"hierarchical"` | Parent rows + child rows (e.g., SOC → PT). Requires exactly one `nested` parameter. | `.parent`, `.is_child`, `.row_label`, `.stat` columns. |
 
 For `hierarchical`, rows are sorted by `.parent` ascending, then parents
 before children (`.is_child = FALSE < TRUE`), then by `.row_label`
@@ -282,7 +284,7 @@ alphabetically.
 
 ```
 .param       character  parameter label
-.stat_label  character  statistic label
+.stat        character  statistic key
 <group1>     character  formatted value for group 1
 <group2>     character  formatted value for group 2
 ...
@@ -294,12 +296,12 @@ alphabetically.
 .parent      character  parent row label (e.g. SOC name)
 .is_child    logical    FALSE = parent row, TRUE = child row
 .row_label   character  display label (same as .parent for parent rows)
-.stat_label  character  statistic label
+.stat        character  statistic key
 <group1>     character  formatted value for group 1
 ...
 ```
 
-The `.parent`, `.is_child`, `.row_label`, `.stat_label` columns are consumed
+The `.parent`, `.is_child`, `.row_label`, `.stat` columns are consumed
 by ksTFL to apply indentation and group headers during rendering.
 
 ---
@@ -318,16 +320,16 @@ Statistics using only built-in R functions, all with `na.rm = TRUE`:
       "chg": { "variable": "CHG", "label": "Change from Baseline (mmHg)" }
     },
     "statistics": {
-      "n":      { "fun": "sum",      "args": { "na.rm": true }, "label": "N" },
-      "mean":   { "fun": "mean",     "args": { "na.rm": true }, "label": "Mean",
+      "n":      { "fun": "sum",      "args": { "na.rm": true } },
+      "mean":   { "fun": "mean",     "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.1f" } },
-      "sd":     { "fun": "sd",       "args": { "na.rm": true }, "label": "SD",
+      "sd":     { "fun": "sd",       "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.2f" } },
-      "median": { "fun": "median",   "args": { "na.rm": true }, "label": "Median",
+      "median": { "fun": "median",   "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.1f" } },
-      "min":    { "fun": "min",      "args": { "na.rm": true }, "label": "Min",
+      "min":    { "fun": "min",      "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.1f" } },
-      "max":    { "fun": "max",      "args": { "na.rm": true }, "label": "Max",
+      "max":    { "fun": "max",      "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.1f" } }
     },
     "groups": {

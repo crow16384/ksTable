@@ -39,6 +39,8 @@ gen_group_by <- function(vars, drop) {
 # can be appended inside a function call.
 #   JSON: { "na.rm": true, "digits": 2 }  →  R: ", na.rm = TRUE, digits = 2"
 # Argument names are validated (SR-1). Values are type-converted to R literals.
+# Scalars become bare literals; multi-element arrays become c(...) so vector
+# arguments (e.g. probs = c(0.25, 0.5, 0.75)) are emitted safely.
 format_args <- function(args) {
   if (is.null(args) || length(args) == 0L) return("")
   nms   <- names(args)
@@ -46,14 +48,22 @@ format_args <- function(args) {
   for (i in seq_along(args)) {
     k    <- assert_id(nms[[i]], paste0("args.", nms[[i]]))
     v    <- args[[i]]
-    rval <- if (is.logical(v))    { if (v) "TRUE" else "FALSE"
-             } else if (is.null(v))   { "NULL"
-             } else if (is.numeric(v)) { as.character(v)
-             } else if (is.character(v)) { r_str(v)
-             } else { as.character(v) }
-    parts[[i]] <- paste0(k, " = ", rval)
+    parts[[i]] <- paste0(k, " = ", r_literal(v))
   }
   paste0(", ", paste(parts, collapse = ", "))
+}
+
+# Convert an R value (scalar or vector) to an R literal string.
+r_literal <- function(v) {
+  if (is.null(v)) return("NULL")
+  one <- function(x) {
+    if (is.logical(x))   return(if (isTRUE(x)) "TRUE" else "FALSE")
+    if (is.numeric(x))   return(format(x, digits = 15, scientific = FALSE, trim = TRUE))
+    if (is.character(x)) return(r_str(x))
+    as.character(x)
+  }
+  if (length(v) == 1L) return(one(v))
+  paste0("c(", paste(vapply(v, one, character(1L)), collapse = ", "), ")")
 }
 
 # TRUE when the format spec expects a list-returning calc function.
@@ -92,8 +102,16 @@ gen_format_expr <- function(s) {
 gen_parameter_stat <- function(ts) {
   params   <- ts$parameter
   stats    <- ts$statistics
-  gvars    <- vapply(ts$groups$by, assert_id, character(1L), field = "groups$by")
+  by       <- ts$groups$by
+  if (is.null(by) || length(by) == 0L)
+    stop("groups.by must be a non-empty array of column names.", call. = FALSE)
+  gvars    <- vapply(by, assert_id, character(1L), field = "groups$by")
   inc_miss <- isTRUE(ts$groups$include_missing_levels)
+
+  if (is.null(params) || length(params) == 0L)
+    stop("parameter map must be non-empty.", call. = FALSE)
+  if (is.null(stats) || length(stats) == 0L)
+    stop("statistics map must be non-empty.", call. = FALSE)
 
   lines <- c(".chunks <- list()", "")
   idx   <- 1L
@@ -105,9 +123,21 @@ gen_parameter_stat <- function(ts) {
     # When an array is given each element expands into its own row block,
     # using the corresponding "labels" entry (or the variable name itself).
     # Use [[]] for field access to prevent $-partial-matching of "variable" -> "variables".
-    vars_raw   <- p[["variables"]] %||% list(p[["variable"]])
-    # Each variable's label defaults to its own name if neither label nor labels is given
-    labels_raw <- p[["labels"]] %||% lapply(vars_raw, function(v) p[["label"]] %||% v)
+    vars_raw <- p[["variables"]] %||% list(p[["variable"]])
+    # labels: pad short arrays with the variable name (schema contract).
+    # Single-variable form uses "label", defaulting to the variable name.
+    labels_src <- p[["labels"]]
+    if (is.null(labels_src)) {
+      labels_raw <- lapply(vars_raw, function(v) p[["label"]] %||% v)
+    } else {
+      labels_raw <- lapply(seq_along(vars_raw), function(i) {
+        if (i <= length(labels_src) && !is.null(labels_src[[i]]) &&
+            nzchar(as.character(labels_src[[i]])))
+          labels_src[[i]]
+        else
+          vars_raw[[i]]
+      })
+    }
 
     for (vi in seq_along(vars_raw)) {
       var <- assert_id(vars_raw[[vi]],  paste0("parameter.", pn, ".variable"))
@@ -123,7 +153,7 @@ gen_parameter_stat <- function(ts) {
             !pn %in% apply_to && !vars_raw[[vi]] %in% apply_to) next
 
         fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
-        slbl <- r_str(s$label %||% sn)
+        skey <- r_str(sn)
 
         extra    <- format_args(s$args)
         raw_expr <- if (needs_list_wrap(s$format)) {
@@ -143,7 +173,7 @@ gen_parameter_stat <- function(ts) {
           "  dplyr::mutate(",
           paste0("    .value      = ", fmt_expr, ","),
           paste0("    .param      = ", lbl, ","),
-          paste0("    .stat_label = ", slbl, ","),
+          paste0("    .stat = ", skey, ","),
           "    .value_raw  = NULL",
         "  )",
         ""
@@ -153,12 +183,17 @@ gen_parameter_stat <- function(ts) {
     }  # vi
   }  # pn
 
+  if (idx == 1L)
+    stop("No statistics chunks generated. Check that 'parameter' and ",
+         "'statistics' are non-empty and that 'apply_to' does not exclude ",
+         "every parameter.", call. = FALSE)
+
   c(lines,
     ".long <- dplyr::bind_rows(.chunks)",
     "",
     "tidyr::pivot_wider(",
     "  .long,",
-    "  id_cols     = c(.param, .stat_label),",
+    "  id_cols     = c(.param, .stat),",
     paste0("  names_from  = c(", paste(gvars, collapse = ", "), "),"),
     "  values_from = .value",
     ")"
@@ -166,33 +201,50 @@ gen_parameter_stat <- function(ts) {
 }
 
 # hierarchical: parent rows + child rows (e.g., SOC → PT), columns = group levels.
+# v0.1 limitation: first parameter, first nested child, first statistic only.
 gen_hierarchical <- function(ts) {
   params <- ts$parameter
   stats  <- ts$statistics
   gvars  <- vapply(ts$groups$by, assert_id, character(1L), field = "groups$by")
+  inc_miss <- isTRUE(ts$groups$include_missing_levels)
+
+  if (is.null(params) || length(params) == 0L)
+    stop("hierarchical layout requires at least one parameter.", call. = FALSE)
+  if (is.null(stats) || length(stats) == 0L)
+    stop("hierarchical layout requires at least one statistic.", call. = FALSE)
 
   pn         <- names(params)[[1L]]
   p          <- params[[pn]]
-  parent_var <- assert_id(p$variable, paste0("parameter.", pn, ".variable"))
+  # Use [[]] access to avoid $-partial-matching "variable" against "variables".
+  parent_var <- assert_id(p[["variable"]], paste0("parameter.", pn, ".variable"))
+
+  if (is.null(p$nested) || length(p$nested) == 0L)
+    stop("hierarchical layout requires parameter '", pn,
+         "' to have a 'nested' child.", call. = FALSE)
 
   child_n   <- names(p$nested)[[1L]]
   child_p   <- p$nested[[child_n]]
-  child_var <- assert_id(child_p$variable, paste0("nested.", child_n, ".variable"))
+  child_var <- assert_id(child_p[["variable"]], paste0("nested.", child_n, ".variable"))
+
+  if (length(stats) > 1L)
+    warning("hierarchical layout uses only the first statistic ('",
+            names(stats)[[1L]], "'); ", length(stats) - 1L,
+            " other statistic(s) ignored.", call. = FALSE)
 
   sn   <- names(stats)[[1L]]   # hierarchical: one stat per cell
   s    <- stats[[sn]]
   fun  <- assert_id(s$fun, paste0("statistics.", sn, ".fun"))
-  slbl <- r_str(s$label %||% sn)
+  skey <- r_str(sn)
 
   extra      <- format_args(s$args)
   raw_expr_p <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", parent_var, extra, "))") else paste0(fun, "(", parent_var, extra, ")")
-  raw_expr_c <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", child_var,  extra, "))") else paste0(fun, "(", child_var,  extra, ")") 
+  raw_expr_c <- if (needs_list_wrap(s$format)) paste0("list(", fun, "(", child_var,  extra, "))") else paste0(fun, "(", child_var,  extra, ")")
   fmt_expr   <- gen_format_expr(s)
 
   c(".chunks <- list()", "",
     paste0("# Parent level: ", parent_var),
     ".chunks[[1L]] <- data |>",
-    gen_group_by(c(gvars, parent_var), drop = TRUE),
+    gen_group_by(c(gvars, parent_var), drop = !inc_miss),
     "  dplyr::summarize(",
     paste0("    .value_raw  = ", raw_expr_p, ","),
     '    .groups     = "drop"',
@@ -201,14 +253,14 @@ gen_hierarchical <- function(ts) {
     paste0("    .value      = ", fmt_expr, ","),
     paste0("    .parent     = ", parent_var, ","),
     paste0("    .row_label  = ", parent_var, ","),
-    paste0("    .stat_label = ", slbl, ","),
+    paste0("    .stat = ", skey, ","),
     "    .is_child   = FALSE,",
     "    .value_raw  = NULL",
     "  )",
     "",
     paste0("# Child level: ", child_var),
     ".chunks[[2L]] <- data |>",
-    gen_group_by(c(gvars, parent_var, child_var), drop = TRUE),
+    gen_group_by(c(gvars, parent_var, child_var), drop = !inc_miss),
     "  dplyr::summarize(",
     paste0("    .value_raw  = ", raw_expr_c, ","),
     '    .groups     = "drop"',
@@ -217,7 +269,7 @@ gen_hierarchical <- function(ts) {
     paste0("    .value      = ", fmt_expr, ","),
     paste0("    .parent     = ", parent_var, ","),
     paste0("    .row_label  = ", child_var, ","),
-    paste0("    .stat_label = ", slbl, ","),
+    paste0("    .stat = ", skey, ","),
     "    .is_child   = TRUE,",
     "    .value_raw  = NULL",
     "  )",
@@ -228,7 +280,7 @@ gen_hierarchical <- function(ts) {
     "",
     "tidyr::pivot_wider(",
     "  .long,",
-    "  id_cols     = c(.parent, .is_child, .row_label, .stat_label),",
+    "  id_cols     = c(.parent, .is_child, .row_label, .stat),",
     paste0("  names_from  = c(", paste(gvars, collapse = ", "), "),"),
     "  values_from = .value",
     ")"
@@ -240,6 +292,9 @@ gen_hierarchical <- function(ts) {
 # Compile a parsed table spec to a plain R script string.
 # Called by the public kst_compile(); separated to allow future caching.
 compile_ts <- function(ts) {
+  if (is.null(ts) || !is.list(ts))
+    stop("table_spec is missing or not an object.", call. = FALSE)
+
   row_structure <- ts$layout$row_structure %||% "parameter_stat"
 
   lines <- switch(row_structure,

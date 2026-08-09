@@ -52,6 +52,28 @@ test_that("spec with all format types passes", {
   expect_length(r$errors, 0L)
 })
 
+test_that("statistics apply_to is accepted", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "cont": { "variables": ["AGE", "BMIBL"] },
+        "sex":  { "variable": "SEX" }
+      },
+      "statistics": {
+        "n":       { "fun": "length" },
+        "mean_sd": { "fun": "mean_sd", "apply_to": ["cont"] },
+        "sex_n":   { "fun": "length",  "apply_to": ["sex"] }
+      },
+      "groups":  { "by": ["TRT"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  r <- kst_validate_spec(spec)
+  expect_true(r$valid)
+  expect_length(r$errors, 0L)
+})
+
 test_that("hierarchical spec with nested parameter passes", {
   spec <- '{
     "schema_version": "1.0",
@@ -104,10 +126,17 @@ test_that("missing layout fails", {
 })
 
 test_that("missing statistics.fun fails", {
-  spec <- minimal_spec(list(statistics = list(n = list(label = "N"))))
+  spec <- minimal_spec(list(statistics = list(n = list(args = list(na.rm = TRUE)))))
   r <- kst_validate_spec(spec)
   expect_false(r$valid)
   expect_true(any(grepl("fun", r$errors)))
+})
+
+test_that("statistics.label is rejected", {
+  spec <- minimal_spec(list(statistics = list(n = list(fun = "length", label = "N"))))
+  r <- kst_validate_spec(spec)
+  expect_false(r$valid)
+  expect_true(any(grepl("additional properties|additionalProperty|label", r$errors)))
 })
 
 test_that("missing parameter.variable fails", {

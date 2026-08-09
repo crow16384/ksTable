@@ -8,12 +8,11 @@ demog_spec <- '{
   "table_spec": {
     "parameter":  { "age": { "variable": "AGE", "label": "Age (years)" } },
     "statistics": {
-      "n":       { "fun": "length", "label": "N" },
-      "mean_sd": { "fun": "mean_sd", "label": "Mean (SD)",
+      "n":       { "fun": "length" },
+      "mean_sd": { "fun": "mean_sd",
                    "format": { "type": "custom", "fun": "format_mean_sd" } },
       "median":  { "fun": "median",
                    "args": { "na.rm": true },
-                   "label": "Median",
                    "format": { "type": "sprintf", "pattern": "%.1f" } }
     },
     "groups":  { "by": ["TRT01P"] },
@@ -30,7 +29,7 @@ ae_spec <- '{
         "nested": { "pt": { "variable": "AEDECOD" } }
       }
     },
-    "statistics": { "n": { "fun": "length", "label": "n" } },
+    "statistics": { "n": { "fun": "length" } },
     "groups":  { "by": ["TRT01P"] },
     "layout":  { "row_structure": "hierarchical" }
   }
@@ -115,6 +114,8 @@ test_that("parameter_stat: assembles with bind_rows + pivot_wider", {
   code <- kst_compile(demog_spec)
   expect_true(grepl("dplyr::bind_rows\\(\\.chunks\\)", code))
   expect_true(grepl("tidyr::pivot_wider", code))
+  expect_true(grepl("id_cols\\s*=\\s*c\\(\\.param, \\.stat\\)", code))
+  expect_false(grepl("\\.stat_label", code))
 })
 
 test_that("parameter_stat: pivot uses correct names_from column", {
@@ -177,6 +178,7 @@ test_that("hierarchical: .is_child column set correctly", {
 test_that("hierarchical: arrange by .parent, .is_child, .row_label", {
   code <- kst_compile(ae_spec)
   expect_true(grepl("arrange\\(\\.parent, \\.is_child, \\.row_label\\)", code))
+  expect_true(grepl("id_cols\\s*=\\s*c\\(\\.parent, \\.is_child, \\.row_label, \\.stat\\)", code))
 })
 
 # ── multi-group ────────────────────────────────────────────────────────────────
@@ -336,8 +338,8 @@ test_that("sourcing a saved script produces a valid tibble", {
     "table_spec": {
       "parameter":  { "age": { "variable": "AGE", "label": "Age" } },
       "statistics": {
-        "n":    { "fun": "length", "label": "N" },
-        "mean": { "fun": "mean", "args": { "na.rm": true }, "label": "Mean",
+        "n":    { "fun": "length" },
+        "mean": { "fun": "mean", "args": { "na.rm": true },
                   "format": { "type": "sprintf", "pattern": "%.1f" } }
       },
       "groups": { "by": ["TRT01P"] },
@@ -358,4 +360,82 @@ test_that("sourcing a saved script produces a valid tibble", {
   expect_true(is.data.frame(result))
   expect_true(".param" %in% names(result))
   expect_equal(nrow(result), 2L)   # 1 param x 2 stats
+})
+
+# ── validate-before-compile ───────────────────────────────────────────────────
+
+test_that("kst_compile rejects invalid specs", {
+  expect_error(kst_compile("{}"), "Invalid table specification")
+  expect_error(
+    kst_compile('{"table_spec": {"parameter": {}, "statistics": {}, "groups": {"by": []}, "layout": {"row_structure": "parameter_stat"}}}'),
+    "Invalid table specification"
+  )
+})
+
+test_that("kst_compile rejects injection attempts via validation", {
+  bad <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter":  { "age": { "variable": "AGE; rm(list=ls())" } },
+      "statistics": { "n": { "fun": "length" } },
+      "groups":     { "by": ["TRT"] },
+      "layout":     { "row_structure": "parameter_stat" }
+    }
+  }'
+  expect_error(kst_compile(bad), "Invalid table specification|not a valid R identifier")
+})
+
+test_that("labels shorter than variables pad with variable names", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "labs": {
+          "variables": ["AGE", "WEIGHT"],
+          "labels": ["Age (years)"]
+        }
+      },
+      "statistics": { "n": { "fun": "length" } },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl('"Age \\(years\\)"', code))
+  expect_true(grepl('"WEIGHT"', code))
+  expect_equal(length(gregexpr("\\.chunks\\[\\[", code)[[1]]), 2L)
+})
+
+test_that("apply_to that excludes every parameter errors at compile time", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": { "age": { "variable": "AGE", "label": "Age" } },
+      "statistics": {
+        "n": { "fun": "length", "apply_to": ["other_param"] }
+      },
+      "groups":  { "by": ["TRT01P"] },
+      "layout":  { "row_structure": "parameter_stat" }
+    }
+  }'
+  expect_error(kst_compile(spec), "No statistics chunks generated")
+})
+
+test_that("hierarchical emits .drop = FALSE when include_missing_levels is true", {
+  spec <- '{
+    "schema_version": "1.0",
+    "table_spec": {
+      "parameter": {
+        "soc": {
+          "variable": "AESOC",
+          "nested": { "pt": { "variable": "AEDECOD" } }
+        }
+      },
+      "statistics": { "n": { "fun": "length" } },
+      "groups":  { "by": ["TRT01P"], "include_missing_levels": true },
+      "layout":  { "row_structure": "hierarchical" }
+    }
+  }'
+  code <- kst_compile(spec)
+  expect_true(grepl("\\.drop = FALSE", code))
 })

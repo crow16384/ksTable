@@ -1,58 +1,40 @@
 # News
 
-## ksTable 0.1.0 (2026-07-05)
+## ksTable 0.1.0 (2026-08-09)
 
-First release. Core DSL-to-dplyr compiler and package infrastructure.
+First usable release. Core DSL-to-dplyr compiler for two layouts.
 
-### New features
+### API
 
-* `kst_compile(json_spec)` — compiles a JSON table specification to a
-  plain, human-readable R script. Calc and format functions referenced in
-  the spec are emitted as bare function calls resolved from the evaluation
-  environment at runtime.
+* `kst_compile(json_spec)` — validates the spec then emits a plain R script.
+  Calc/format functions are bare calls resolved from the evaluation environment.
+* `kst_save(json_spec, file, overwrite = FALSE)` — same codegen with a header.
+* `kst_validate_spec(json_spec)` — JSON Schema (jsonvalidate/ajv when available)
+  or manual structural checks, plus SR-1 identifier safety.
+* `kst_extract_metadata()` / `kst_apply_metadata()` — pre-eval factor levels and
+  ksformat labels. Compile does **not** apply metadata; optional JSON
+  `groups.format` is documentation for the `format_map` argument.
 
-* `kst_generate_table(json_spec, data)` — end-to-end: compile + execute.
-  Runs the generated script in an isolated `new.env(parent = envir)` so
-  intermediate objects (`.chunks`, `.long`) never pollute the caller's
-  workspace.
-
-* `kst_validate_spec(json_spec)` — two-layer validation:
-  1. JSON Schema (`inst/schema/table_spec_v1.json`, JSON Schema Draft-07)
-     via `jsonvalidate` + ajv when installed; manual structural checks
-     otherwise.
-  2. SR-1 identifier safety: `assert_id()` on every JSON-derived symbol
-     that appears in generated R code.
-
-* `kst_extract_metadata(data, variables)` / `kst_apply_metadata(data, meta)`
-  — factor level extraction and re-levelling for `include_missing_levels`.
-
-### Supported layouts
+### Layouts
 
 * `parameter_stat` — one row per parameter × statistic; columns = group levels.
-* `hierarchical` — parent rows + child rows (e.g., SOC → PT).
+* `hierarchical` — parent + one nested child (e.g. SOC → PT); first statistic only;
+  honors `include_missing_levels` via `.drop = FALSE`.
 
-### Format types
+### Formats
 
-* *(none)* → `as.character()` (default)
-* `"sprintf"` → `sprintf(pattern, .value_raw)`
-* `"custom"` → `vapply(.value_raw, format_fn, character(1L))`
-* `"template"` → `vapply(.value_raw, glue::glue_data, character(1L))`
-* `"ksformat"` → `ksformat::fput(.value_raw, format_name)`
+* default → `as.character(.value_raw)`
+* `sprintf` / `custom` / `template` (requires Suggests **glue** at eval) / `ksformat`
 
-### Extra function arguments from JSON
+### Hardening (0.1 honesty pass)
 
-Statistics can specify `"args"` to pass extra parameters to any R function:
-
-```json
-{ "fun": "median", "args": { "na.rm": true }, "label": "Median" }
-```
-
-Generates: `.value_raw = median(AGE, na.rm = TRUE)`.
+* Validate-before-compile; fail on empty chunks / short `labels` padding;
+  surface ksformat failures as warnings; docs aligned with bare-call codegen.
 
 ### Package contents
 
 * `R/` — `compiler.R`, `compile.R`, `validate.R`, `metadata.R`
-* `inst/schema/table_spec_v1.json` — formal JSON Schema
-* `demo/` — `demography.R`, `laboratory.R`, `adverse_events.R`
-* `vignettes/` — `getting_started.Rmd`, `dsl_reference.Rmd`
-* `tests/testthat/` — 113 tests (validate, compile, generate)
+* `inst/schema/table_spec_v1.json`, `inst/examples/*.json`
+* `demo/` — demography, laboratory, adverse_events, ksformat_integration
+* `vignettes/` — getting_started, dsl_reference
+* `tests/testthat/` — 103 tests (validate, compile, generate, metadata)

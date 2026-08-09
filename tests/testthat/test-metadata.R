@@ -47,6 +47,7 @@ test_that("warns on unknown variable", {
 
 test_that("format_map stores format_name in result", {
   meta <- kst_extract_metadata(test_df, "TRT",
+                                use_ksformat = FALSE,
                                 format_map = list(TRT = "some_fmt"))
   expect_equal(meta$TRT$format_name, "some_fmt")
 })
@@ -136,4 +137,17 @@ test_that("round-trip: character var -> factor with correct levels and values", 
   # Codes "A"/"B" replaced with labels
   expect_false("A" %in% as.character(result$TRT))
   expect_false("B" %in% as.character(result$TRT))
+})
+
+test_that("ksformat failure warns instead of failing silently", {
+  skip_if_not_installed("ksformat")
+  expect_warning(
+    kst_extract_metadata(test_df, "TRT",
+                         format_map = list(TRT = "no_such_format_zzz")),
+    "ksformat failed"
+  )
+  meta <- list(TRT = list(type = "character",
+                          levels = c("A", "B"),
+                          format_name = "no_such_format_zzz"))
+  expect_warning(kst_apply_metadata(test_df, meta), "ksformat failed")
 })
