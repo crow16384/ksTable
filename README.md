@@ -159,6 +159,23 @@ Package website: <https://crow16384.github.io/ksTable/>
 
 Locally: `pkgdown::build_site()` (writes to `docs/`).
 
+### RStudio Addin — Spec Builder
+
+Install Suggested UI packages, then use **Tools → Addins → ksTable Spec Builder**
+(or call `kst_spec_builder()`):
+
+```r
+install.packages(c("shiny", "miniUI", "rstudioapi"))
+# optional JSON highlighting:
+install.packages("shinyAce")
+
+kst_spec_builder()
+```
+
+The gadget edits the JSON DSL with forms on the left and JSON on the right
+(two-way sync). Actions: Validate, Insert JSON at cursor, Save JSON,
+Compile→`.R` via `kst_save()`.
+
 Bump / sync the package version (DESCRIPTION → README, NEWS, vignettes, …):
 
 ```r

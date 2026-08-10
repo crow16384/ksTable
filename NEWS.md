@@ -6,6 +6,9 @@
 * `scripts/bump_version.R` — bump DESCRIPTION and sync README / PLAN /
   ARCHITECTURE / NEWS / vignette version lines (`--sync-only` supported).
 * pkgdown site continues to read the version from DESCRIPTION automatically.
+* **RStudio Addin** `kst_spec_builder()` — miniUI gadget with forms + JSON
+  (two-way sync), validate / insert / save / compile. Suggests: shiny,
+  miniUI, rstudioapi; optional shinyAce.
 
 ## ksTable 0.1.0 (2026-08-09)
 

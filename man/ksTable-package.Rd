@@ -6,11 +6,14 @@
 \alias{ksTable-package}
 \title{ksTable: JSON DSL to Dplyr Code Generator for Clinical Tables}
 \description{
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
 Reads declarative JSON table specifications and uses a pure-R generator to produce pipe-based dplyr/tidyr R code. The generated code produces pre-formatted tibbles ready for rendering with the ksTFL package. Supports parameter-statistic and hierarchical (SOC -> PT) table layouts, multi-way stratification, ksformat integration, and multiple format methods (sprintf, template, custom function, ksformat). Template formats require the suggested 'glue' package at evaluation time. All JSON-derived identifiers are validated before code emission to prevent injection attacks (SR-1).
 }
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://crow16384.github.io/ksTable/}
   \item \url{https://github.com/crow16384/ksTable}
   \item Report bugs at \url{https://github.com/crow16384/ksTable/issues}
 }

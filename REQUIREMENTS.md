@@ -18,6 +18,7 @@
 ✓ Multiple formatting methods (ksformat, templates, custom, sprintf)  
 ✓ Integration with ksTFL for rendering (output shape)  
 ✓ Integration with ksformat for value formatting  
+✓ RStudio Addin Spec Builder (`kst_spec_builder`) — forms + JSON gadget  
 
 ### Out of Scope
 
@@ -25,7 +26,7 @@
 ✗ Statistical calculations (user provides these)  
 ✗ Data validation (assumes clean input)  
 ✗ ADaM dataset specifics (generic for any tibble)  
-✗ GUI or interactive table builder  
+✗ Evaluating compiled tables inside the Spec Builder (compile/save only)  
 ✗ Real-time table updates  
 ✗ Database connectivity  
 ✗ Query plan optimization / C++ compiler (rejected after pure-R PoC)  

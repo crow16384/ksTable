@@ -1,0 +1,4 @@
+Name: ksTable Spec Builder
+Description: Interactively build a ksTable JSON DSL specification (forms + JSON).
+Binding: kst_spec_builder
+Interactive: true
