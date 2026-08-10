@@ -396,58 +396,76 @@ header formatting during rendering.</p>
 <em>how</em> to resolve <code>denom</code>, and your calc function still
 computes <code>n</code> / <code>pct</code> (and formatting via
 <code>"format"</code>).</p>
-<p>Common kinds:</p>
 <table class="table">
 <colgroup>
-<col width="68%">
-<col width="31%">
+<col width="41%">
+<col width="18%">
+<col width="39%">
 </colgroup>
 <thead><tr class="header">
 <th><code>denominator.type</code></th>
 <th>Meaning</th>
+<th>Emitted <code>denom =</code>
+</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
 <td><code>n</code></td>
-<td>Rows in the current <code>groups.by</code> cell
-(<code><a href="https://dplyr.tidyverse.org/reference/context.html" class="external-link">dplyr::n()</a></code>)</td>
+<td>Rows in the current <code>groups.by</code> cell</td>
+<td><code><a href="https://dplyr.tidyverse.org/reference/context.html" class="external-link">dplyr::n()</a></code></td>
 </tr>
 <tr class="even">
 <td><code>n_distinct</code></td>
 <td>Distinct values of a column in the cell</td>
+<td><code>dplyr::n_distinct(&lt;variable&gt;)</code></td>
 </tr>
 <tr class="odd">
 <td><code>data_n</code></td>
 <td>Aggregate analysis <code>data</code> over a <strong>subset</strong>
 of <code>groups.by</code>
 </td>
+<td>
+<code>dplyr::first(.kst_dK)</code> after pre-agg + join</td>
 </tr>
 <tr class="even">
 <td><code>external</code></td>
-<td>Population / big-N object from the eval environment</td>
+<td>Population / big-N from the eval environment</td>
+<td>join + <code>first(.kst_dK)</code>, or bare scalar
+<code>name</code>
+</td>
 </tr>
 </tbody>
 </table>
-<div class="section level3">
-<h3 id="n-pct-of-adsl-n-external">
-<code>n (pct%)</code> of ADSL N (<code>external</code>)<a class="anchor" aria-label="anchor" href="#n-pct-of-adsl-n-external"></a>
-</h3>
-<p>Build a population table, declare
-<code>denominator.type = "external"</code>, and bind it into the eval
-environment under the name given in <code>"name"</code>:</p>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Round pct for readable template output</span></span>
+<span><span class="va">count_pct</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">denom</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">n</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">pct</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">denom</span><span class="op">)</span> <span class="op">==</span> <span class="fl">1L</span> <span class="op">&amp;&amp;</span> <span class="fu"><a href="https://rdrr.io/r/base/Logic.html" class="external-link">isTRUE</a></span><span class="op">(</span><span class="va">denom</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span><span class="op">)</span> <span class="fl">100</span> <span class="op">*</span> <span class="va">n</span> <span class="op">/</span> <span class="va">denom</span> <span class="kw">else</span> <span class="cn">NA_real_</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n <span class="op">=</span> <span class="va">n</span>, pct <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pct</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">run_denom</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">spec</span>, <span class="va">data</span>, <span class="va">extras</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">code</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">spec</span><span class="op">)</span></span>
+<span>  <span class="va">env</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">new.env</a></span><span class="op">(</span>parent <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">environment</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">env</span><span class="op">$</span><span class="va">data</span> <span class="op">&lt;-</span> <span class="va">data</span></span>
+<span>  <span class="kw">for</span> <span class="op">(</span><span class="va">nm</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">extras</span><span class="op">)</span><span class="op">)</span> <span class="va">env</span><span class="op">[[</span><span class="va">nm</span><span class="op">]</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">extras</span><span class="op">[[</span><span class="va">nm</span><span class="op">]</span><span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">eval</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/parse.html" class="external-link">parse</a></span><span class="op">(</span>text <span class="op">=</span> <span class="va">code</span><span class="op">)</span>, envir <span class="op">=</span> <span class="va">env</span><span class="op">)</span></span>
+<span><span class="op">}</span></span></code></pre></div>
+<div class="section level3">
+<h3 id="external-population-n-keyed-tibble">1. <code>external</code> — population N (keyed tibble)<a class="anchor" aria-label="anchor" href="#external-population-n-keyed-tibble"></a>
+</h3>
+<p>Build a population table and bind it under <code>"name"</code>:</p>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">adsl_n</span> <span class="op">&lt;-</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/count.html" class="external-link">count</a></span><span class="op">(</span><span class="va">adsl</span>, <span class="va">TRT01P</span>, name <span class="op">=</span> <span class="st">"N"</span><span class="op">)</span></span>
 <span><span class="va">adsl_n</span></span>
 <span><span class="co">#&gt;    TRT01P   N</span></span>
 <span><span class="co">#&gt; 1  Drug A 160</span></span>
 <span><span class="co">#&gt; 2  Drug B 160</span></span>
-<span><span class="co">#&gt; 3 Placebo 160</span></span></code></pre></div>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">pct_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
+<span><span class="co">#&gt; 3 Placebo 160</span></span>
+<span></span>
+<span><span class="va">ext_keyed_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
 <span><span class="st">  "schema_version": "1.0",</span></span>
 <span><span class="st">  "table_spec": {</span></span>
-<span><span class="st">    "id": "demographics_age_pct",</span></span>
-<span><span class="st">    "title": "Age: n and % of treatment arm N",</span></span>
 <span><span class="st">    "parameter": {</span></span>
 <span><span class="st">      "age": { "variable": "AGE", "label": "Age (years)" }</span></span>
 <span><span class="st">    },</span></span>
@@ -466,10 +484,9 @@ environment under the name given in <code>"name"</code>:</p>
 <span><span class="st">    "groups": { "by": ["TRT01P"] },</span></span>
 <span><span class="st">    "layout": { "row_structure": "parameter_stat" }</span></span>
 <span><span class="st">  }</span></span>
-<span><span class="st">}'</span></span></code></pre></div>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">pct_code</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">pct_spec</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="va">pct_code</span><span class="op">)</span>   <span class="co"># shows prep join + denom = dplyr::first(.kst_d1)</span></span>
+<span><span class="st">}'</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">ext_keyed_spec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; .kst_d1 &lt;- adsl_n |&gt;</span></span>
 <span><span class="co">#&gt;   dplyr::select(TRT01P, N) |&gt;</span></span>
 <span><span class="co">#&gt;   dplyr::rename(.kst_d1 = N)</span></span>
@@ -505,24 +522,317 @@ environment under the name given in <code>"name"</code>:</p>
 <span><span class="co">#&gt;   names_from  = c(TRT01P),</span></span>
 <span><span class="co">#&gt;   values_from = .value</span></span>
 <span><span class="co">#&gt; )</span></span>
-<span></span>
-<span><span class="va">pct_env</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">new.env</a></span><span class="op">(</span>parent <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">environment</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">pct_env</span><span class="op">$</span><span class="va">data</span>   <span class="op">&lt;-</span> <span class="va">adsl</span></span>
-<span><span class="va">pct_env</span><span class="op">$</span><span class="va">adsl_n</span> <span class="op">&lt;-</span> <span class="va">adsl_n</span></span>
-<span><span class="va">pct_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">eval</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/parse.html" class="external-link">parse</a></span><span class="op">(</span>text <span class="op">=</span> <span class="va">pct_code</span><span class="op">)</span>, envir <span class="op">=</span> <span class="va">pct_env</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">pct_result</span><span class="op">)</span></span>
+<span><span class="fu">run_denom</span><span class="op">(</span><span class="va">ext_keyed_spec</span>, <span class="va">adsl</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>adsl_n <span class="op">=</span> <span class="va">adsl_n</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 5</span></span></span>
 <span><span class="co">#&gt;   .param      .stat `Drug A`   `Drug B`   Placebo   </span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Age (years) n_pct 160 (100%) 160 (100%) 160 (100%)</span></span></code></pre></div>
-<p>The same <code>denominator</code> field works on hierarchical
-statistics (for example AE counts over ADSL N). For <code>%</code>
-within treatment when also stratified by sex, use <code>data_n</code>
-over a subset of <code>groups.by</code>
-(e.g. <code>"by": ["TRT01P"]</code> with
-<code>"distinct": "USUBJID"</code> while <code>groups.by</code> is
-<code>["TRT01P","SEX"]</code>). See
-<code><a href="../articles/dsl_reference.html">vignette("dsl_reference")</a></code> for the full reference.</p>
+</div>
+<div class="section level3">
+<h3 id="external-scalar-big-n">2. <code>external</code> — scalar big-N<a class="anchor" aria-label="anchor" href="#external-scalar-big-n"></a>
+</h3>
+<p>Omit <code>"by"</code> / <code>"value"</code> when the denominator is
+a single number in the eval env:</p>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">N_total</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">adsl</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">ext_scalar_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
+<span><span class="st">  "schema_version": "1.0",</span></span>
+<span><span class="st">  "table_spec": {</span></span>
+<span><span class="st">    "parameter": {</span></span>
+<span><span class="st">      "age": { "variable": "AGE", "label": "Age (years)" }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "statistics": {</span></span>
+<span><span class="st">      "n_pct": {</span></span>
+<span><span class="st">        "fun": "count_pct",</span></span>
+<span><span class="st">        "denominator": { "type": "external", "name": "N_total" },</span></span>
+<span><span class="st">        "format": { "type": "template", "pattern": "{n} ({pct}%)" }</span></span>
+<span><span class="st">      }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "groups": { "by": ["TRT01P"] },</span></span>
+<span><span class="st">    "layout": { "row_structure": "parameter_stat" }</span></span>
+<span><span class="st">  }</span></span>
+<span><span class="st">}'</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">ext_scalar_spec</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; .raw &lt;- data |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::group_by(TRT01P) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::summarize(</span></span>
+<span><span class="co">#&gt;     .c1 = list(count_pct(AGE, denom = N_total)),</span></span>
+<span><span class="co">#&gt;     .groups = "drop"</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; .long &lt;- .raw |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     TRT01P = TRT01P,</span></span>
+<span><span class="co">#&gt;     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),</span></span>
+<span><span class="co">#&gt;     .keep = "none"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   tidyr::pivot_longer(</span></span>
+<span><span class="co">#&gt;     cols = c(.c1),</span></span>
+<span><span class="co">#&gt;     names_to = ".cid",</span></span>
+<span><span class="co">#&gt;     values_to = ".value"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     .param = unname(c(".c1" = "Age (years)")[.cid]),</span></span>
+<span><span class="co">#&gt;     .stat  = unname(c(".c1" = "n_pct")[.cid]),</span></span>
+<span><span class="co">#&gt;     .cid = NULL</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; tidyr::pivot_wider(</span></span>
+<span><span class="co">#&gt;   .long,</span></span>
+<span><span class="co">#&gt;   id_cols     = c(.param, .stat),</span></span>
+<span><span class="co">#&gt;   names_from  = c(TRT01P),</span></span>
+<span><span class="co">#&gt;   values_from = .value</span></span>
+<span><span class="co">#&gt; )</span></span>
+<span><span class="fu">run_denom</span><span class="op">(</span><span class="va">ext_scalar_spec</span>, <span class="va">adsl</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>N_total <span class="op">=</span> <span class="va">N_total</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 5</span></span></span>
+<span><span class="co">#&gt;   .param      .stat `Drug A`    `Drug B`    Placebo    </span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Age (years) n_pct 160 (33.3%) 160 (33.3%) 160 (33.3%)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="n-within-cell-row-count">3. <code>n</code> — within-cell row count<a class="anchor" aria-label="anchor" href="#n-within-cell-row-count"></a>
+</h3>
+<p><code>denom = dplyr::n()</code> for the current
+<code>groups.by</code> cell (no prep / join):</p>
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">n_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
+<span><span class="st">  "schema_version": "1.0",</span></span>
+<span><span class="st">  "table_spec": {</span></span>
+<span><span class="st">    "parameter": {</span></span>
+<span><span class="st">      "age": { "variable": "AGE", "label": "Age (years)" }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "statistics": {</span></span>
+<span><span class="st">      "n_pct": {</span></span>
+<span><span class="st">        "fun": "count_pct",</span></span>
+<span><span class="st">        "denominator": { "type": "n" },</span></span>
+<span><span class="st">        "format": { "type": "template", "pattern": "{n} ({pct}%)" }</span></span>
+<span><span class="st">      }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "groups": { "by": ["TRT01P"] },</span></span>
+<span><span class="st">    "layout": { "row_structure": "parameter_stat" }</span></span>
+<span><span class="st">  }</span></span>
+<span><span class="st">}'</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">n_spec</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; .raw &lt;- data |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::group_by(TRT01P) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::summarize(</span></span>
+<span><span class="co">#&gt;     .c1 = list(count_pct(AGE, denom = dplyr::n())),</span></span>
+<span><span class="co">#&gt;     .groups = "drop"</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; .long &lt;- .raw |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     TRT01P = TRT01P,</span></span>
+<span><span class="co">#&gt;     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),</span></span>
+<span><span class="co">#&gt;     .keep = "none"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   tidyr::pivot_longer(</span></span>
+<span><span class="co">#&gt;     cols = c(.c1),</span></span>
+<span><span class="co">#&gt;     names_to = ".cid",</span></span>
+<span><span class="co">#&gt;     values_to = ".value"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     .param = unname(c(".c1" = "Age (years)")[.cid]),</span></span>
+<span><span class="co">#&gt;     .stat  = unname(c(".c1" = "n_pct")[.cid]),</span></span>
+<span><span class="co">#&gt;     .cid = NULL</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; tidyr::pivot_wider(</span></span>
+<span><span class="co">#&gt;   .long,</span></span>
+<span><span class="co">#&gt;   id_cols     = c(.param, .stat),</span></span>
+<span><span class="co">#&gt;   names_from  = c(TRT01P),</span></span>
+<span><span class="co">#&gt;   values_from = .value</span></span>
+<span><span class="co">#&gt; )</span></span>
+<span><span class="fu">run_denom</span><span class="op">(</span><span class="va">n_spec</span>, <span class="va">adsl</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 5</span></span></span>
+<span><span class="co">#&gt;   .param      .stat `Drug A`   `Drug B`   Placebo   </span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Age (years) n_pct 160 (100%) 160 (100%) 160 (100%)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="n_distinct-distinct-values-in-the-cell">4. <code>n_distinct</code> — distinct values in the cell<a class="anchor" aria-label="anchor" href="#n_distinct-distinct-values-in-the-cell"></a>
+</h3>
+<p>Useful when analysis data can have multiple rows per subject (e.g. AE
+records). Here each ADSL row is one subject, so <code>n</code> and
+<code>n_distinct(USUBJID)</code> match:</p>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">nd_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
+<span><span class="st">  "schema_version": "1.0",</span></span>
+<span><span class="st">  "table_spec": {</span></span>
+<span><span class="st">    "parameter": {</span></span>
+<span><span class="st">      "age": { "variable": "AGE", "label": "Age (years)" }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "statistics": {</span></span>
+<span><span class="st">      "n_pct": {</span></span>
+<span><span class="st">        "fun": "count_pct",</span></span>
+<span><span class="st">        "denominator": {</span></span>
+<span><span class="st">          "type": "n_distinct",</span></span>
+<span><span class="st">          "variable": "USUBJID"</span></span>
+<span><span class="st">        },</span></span>
+<span><span class="st">        "format": { "type": "template", "pattern": "{n} ({pct}%)" }</span></span>
+<span><span class="st">      }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "groups": { "by": ["TRT01P"] },</span></span>
+<span><span class="st">    "layout": { "row_structure": "parameter_stat" }</span></span>
+<span><span class="st">  }</span></span>
+<span><span class="st">}'</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">nd_spec</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; .raw &lt;- data |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::group_by(TRT01P) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::summarize(</span></span>
+<span><span class="co">#&gt;     .c1 = list(count_pct(AGE, denom = dplyr::n_distinct(USUBJID))),</span></span>
+<span><span class="co">#&gt;     .groups = "drop"</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; .long &lt;- .raw |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     TRT01P = TRT01P,</span></span>
+<span><span class="co">#&gt;     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),</span></span>
+<span><span class="co">#&gt;     .keep = "none"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   tidyr::pivot_longer(</span></span>
+<span><span class="co">#&gt;     cols = c(.c1),</span></span>
+<span><span class="co">#&gt;     names_to = ".cid",</span></span>
+<span><span class="co">#&gt;     values_to = ".value"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     .param = unname(c(".c1" = "Age (years)")[.cid]),</span></span>
+<span><span class="co">#&gt;     .stat  = unname(c(".c1" = "n_pct")[.cid]),</span></span>
+<span><span class="co">#&gt;     .cid = NULL</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; tidyr::pivot_wider(</span></span>
+<span><span class="co">#&gt;   .long,</span></span>
+<span><span class="co">#&gt;   id_cols     = c(.param, .stat),</span></span>
+<span><span class="co">#&gt;   names_from  = c(TRT01P),</span></span>
+<span><span class="co">#&gt;   values_from = .value</span></span>
+<span><span class="co">#&gt; )</span></span>
+<span><span class="fu">run_denom</span><span class="op">(</span><span class="va">nd_spec</span>, <span class="va">adsl</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 5</span></span></span>
+<span><span class="co">#&gt;   .param      .stat `Drug A`   `Drug B`   Placebo   </span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Age (years) n_pct 160 (100%) 160 (100%) 160 (100%)</span></span></code></pre></div>
+<p>On AE data, the same kind denominates event counts by distinct
+subjects in the cell:</p>
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">nd_ae_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
+<span><span class="st">  "schema_version": "1.0",</span></span>
+<span><span class="st">  "table_spec": {</span></span>
+<span><span class="st">    "parameter": {</span></span>
+<span><span class="st">      "pt": { "variable": "AEDECOD", "label": "Preferred Term" }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "statistics": {</span></span>
+<span><span class="st">      "n_pct": {</span></span>
+<span><span class="st">        "fun": "count_pct",</span></span>
+<span><span class="st">        "denominator": {</span></span>
+<span><span class="st">          "type": "n_distinct",</span></span>
+<span><span class="st">          "variable": "USUBJID"</span></span>
+<span><span class="st">        },</span></span>
+<span><span class="st">        "format": { "type": "template", "pattern": "{n} ({pct}%)" }</span></span>
+<span><span class="st">      }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "groups": { "by": ["TRT01P"] },</span></span>
+<span><span class="st">    "layout": { "row_structure": "parameter_stat" }</span></span>
+<span><span class="st">  }</span></span>
+<span><span class="st">}'</span></span>
+<span></span>
+<span><span class="fu">run_denom</span><span class="op">(</span><span class="va">nd_ae_spec</span>, <span class="va">ae</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 5</span></span></span>
+<span><span class="co">#&gt;   .param         .stat `Drug A`     `Drug B`     Placebo    </span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>          <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Preferred Term n_pct 109 (136.2%) 103 (135.5%) 88 (125.7%)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="data_n-subset-of-groups-by">5. <code>data_n</code> — subset of <code>groups.by</code><a class="anchor" aria-label="anchor" href="#data_n-subset-of-groups-by"></a>
+</h3>
+<p>When columns are <code>TRT01P × SEX</code>, take the denominator over
+<strong>TRT only</strong> (ignore SEX). Optional <code>"distinct"</code>
+uses <code>n_distinct</code>; omit it for row count.</p>
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">data_n_spec</span> <span class="op">&lt;-</span> <span class="st">'{</span></span>
+<span><span class="st">  "schema_version": "1.0",</span></span>
+<span><span class="st">  "table_spec": {</span></span>
+<span><span class="st">    "parameter": {</span></span>
+<span><span class="st">      "age": { "variable": "AGE", "label": "Age (years)" }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "statistics": {</span></span>
+<span><span class="st">      "n_pct": {</span></span>
+<span><span class="st">        "fun": "count_pct",</span></span>
+<span><span class="st">        "denominator": {</span></span>
+<span><span class="st">          "type": "data_n",</span></span>
+<span><span class="st">          "by": ["TRT01P"],</span></span>
+<span><span class="st">          "distinct": "USUBJID"</span></span>
+<span><span class="st">        },</span></span>
+<span><span class="st">        "format": { "type": "template", "pattern": "{n} ({pct}%)" }</span></span>
+<span><span class="st">      }</span></span>
+<span><span class="st">    },</span></span>
+<span><span class="st">    "groups": { "by": ["TRT01P", "SEX"] },</span></span>
+<span><span class="st">    "layout": { "row_structure": "parameter_stat" }</span></span>
+<span><span class="st">  }</span></span>
+<span><span class="st">}'</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">data_n_spec</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; .kst_d1 &lt;- data |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::group_by(TRT01P) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::summarize(.kst_d1 = dplyr::n_distinct(USUBJID), .groups = "drop")</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; .raw &lt;- data |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::left_join(.kst_d1, by = c("TRT01P")) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::group_by(TRT01P, SEX) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::summarize(</span></span>
+<span><span class="co">#&gt;     .c1 = list(count_pct(AGE, denom = dplyr::first(.kst_d1))),</span></span>
+<span><span class="co">#&gt;     .groups = "drop"</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; .long &lt;- .raw |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     TRT01P = TRT01P,</span></span>
+<span><span class="co">#&gt;     SEX = SEX,</span></span>
+<span><span class="co">#&gt;     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),</span></span>
+<span><span class="co">#&gt;     .keep = "none"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   tidyr::pivot_longer(</span></span>
+<span><span class="co">#&gt;     cols = c(.c1),</span></span>
+<span><span class="co">#&gt;     names_to = ".cid",</span></span>
+<span><span class="co">#&gt;     values_to = ".value"</span></span>
+<span><span class="co">#&gt;   ) |&gt;</span></span>
+<span><span class="co">#&gt;   dplyr::mutate(</span></span>
+<span><span class="co">#&gt;     .param = unname(c(".c1" = "Age (years)")[.cid]),</span></span>
+<span><span class="co">#&gt;     .stat  = unname(c(".c1" = "n_pct")[.cid]),</span></span>
+<span><span class="co">#&gt;     .cid = NULL</span></span>
+<span><span class="co">#&gt;   )</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; tidyr::pivot_wider(</span></span>
+<span><span class="co">#&gt;   .long,</span></span>
+<span><span class="co">#&gt;   id_cols     = c(.param, .stat),</span></span>
+<span><span class="co">#&gt;   names_from  = c(TRT01P, SEX),</span></span>
+<span><span class="co">#&gt;   values_from = .value</span></span>
+<span><span class="co">#&gt; )</span></span>
+<span><span class="fu">run_denom</span><span class="op">(</span><span class="va">data_n_spec</span>, <span class="va">adsl</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 8</span></span></span>
+<span><span class="co">#&gt;   .param   .stat `Drug A_F` `Drug A_M` `Drug B_F` `Drug B_M` Placebo_F Placebo_M</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Age (ye… n_pct 85 (53.1%) 75 (46.9%) 70 (43.8%) 90 (56.2%) 80 (50%)  80 (50%)</span></span></code></pre></div>
+<p>Rules that apply to every kind:</p>
+<ul>
+<li>
+<code>data_n.by</code> / <code>external.by</code> must be a subset
+of <code>groups.by</code>.</li>
+<li>
+<code>external</code> with <code>by</code> requires
+<code>value</code> (N column name).</li>
+<li>Do not set both <code>denominator</code> and
+<code>args.denom</code>.</li>
+<li>Identical denom specs are deduplicated to one prep table /
+join.</li>
+<li>The same <code>denominator</code> field works on hierarchical
+statistics.</li>
+</ul>
+<p>See <code><a href="../articles/dsl_reference.html">vignette("dsl_reference")</a></code> for the field schema.</p>
 <hr>
 </div>
 </div>
@@ -532,7 +842,7 @@ over a subset of <code>groups.by</code>
 <p>Run the compiled script in
 <code>new.env(parent = environment())</code>. For interactive debugging,
 set up the environment manually and inspect intermediate objects:</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">code</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">demog_spec</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">env</span>       <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">new.env</a></span><span class="op">(</span>parent <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">environment</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span>   <span class="co"># calc/format functions visible via parent</span></span>
@@ -571,14 +881,14 @@ set up the environment manually and inspect intermediate objects:</p>
 <p>Any function available in the calling environment can be used as a
 calc function. Pass extra arguments via <code>"args"</code> in the JSON
 spec:</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="st">"statistics"</span><span class="er">:</span> <span class="fu">{</span></span>
-<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>  <span class="dt">"n"</span><span class="fu">:</span>      <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"sum"</span><span class="fu">,</span>      <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span>  <span class="fu">}</span> <span class="fu">},</span></span>
-<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a>  <span class="dt">"median"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"median"</span><span class="fu">,</span>   <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span>  <span class="fu">}</span> <span class="fu">},</span></span>
-<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a>  <span class="dt">"q25"</span><span class="fu">:</span>    <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"quantile"</span><span class="fu">,</span> <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"probs"</span><span class="fu">:</span> <span class="fl">0.25</span><span class="fu">,</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span> <span class="fu">}</span> <span class="fu">},</span></span>
-<span id="cb17-5"><a href="#cb17-5" tabindex="-1"></a>  <span class="dt">"sd"</span><span class="fu">:</span>     <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"sd"</span><span class="fu">,</span>       <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span>  <span class="fu">}</span> <span class="fu">}</span></span>
-<span id="cb17-6"><a href="#cb17-6" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb21"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="st">"statistics"</span><span class="er">:</span> <span class="fu">{</span></span>
+<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a>  <span class="dt">"n"</span><span class="fu">:</span>      <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"sum"</span><span class="fu">,</span>      <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span>  <span class="fu">}</span> <span class="fu">},</span></span>
+<span id="cb21-3"><a href="#cb21-3" tabindex="-1"></a>  <span class="dt">"median"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"median"</span><span class="fu">,</span>   <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span>  <span class="fu">}</span> <span class="fu">},</span></span>
+<span id="cb21-4"><a href="#cb21-4" tabindex="-1"></a>  <span class="dt">"q25"</span><span class="fu">:</span>    <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"quantile"</span><span class="fu">,</span> <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"probs"</span><span class="fu">:</span> <span class="fl">0.25</span><span class="fu">,</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span> <span class="fu">}</span> <span class="fu">},</span></span>
+<span id="cb21-5"><a href="#cb21-5" tabindex="-1"></a>  <span class="dt">"sd"</span><span class="fu">:</span>     <span class="fu">{</span> <span class="dt">"fun"</span><span class="fu">:</span> <span class="st">"sd"</span><span class="fu">,</span>       <span class="dt">"args"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"na.rm"</span><span class="fu">:</span> <span class="kw">true</span>  <span class="fu">}</span> <span class="fu">}</span></span>
+<span id="cb21-6"><a href="#cb21-6" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 <p>Generated code (for <code>median</code>):</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">.value_raw</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">AGE</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
 <p><code>"args"</code> values are converted to R literals:</p>
 <table class="table">
@@ -617,13 +927,13 @@ spec:</p>
 <p><code><a href="../reference/kst_validate_spec.html">kst_validate_spec()</a></code> checks the spec without generating
 any code. It is useful for early feedback and for testing JSON produced
 by tooling or users.</p>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/kst_validate_spec.html">kst_validate_spec</a></span><span class="op">(</span><span class="va">demog_spec</span><span class="op">)</span></span>
 <span><span class="va">result</span><span class="op">$</span><span class="va">valid</span>    <span class="co"># TRUE</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
 <span><span class="va">result</span><span class="op">$</span><span class="va">errors</span>   <span class="co"># character(0)</span></span>
 <span><span class="co">#&gt; character(0)</span></span></code></pre></div>
-<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">bad_spec</span> <span class="op">&lt;-</span> <span class="st">'{"schema_version":"1.0","table_spec":{"parameter":{},</span></span>
 <span><span class="st">               "statistics":{},"groups":{"by":["TRT"]},"layout":{}}}'</span></span>
 <span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/kst_validate_spec.html">kst_validate_spec</a></span><span class="op">(</span><span class="va">bad_spec</span><span class="op">)</span></span>
@@ -636,7 +946,7 @@ by tooling or users.</p>
 <span><span class="co">#&gt; [3] "/table_spec/layout: must have required property 'row_structure'"</span></span>
 <span><span class="co"># [1] "Missing required field: /table_spec/layout/row_structure"</span></span></code></pre></div>
 <p>Injection attempts are rejected at the identifier level (SR-1):</p>
-<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">inject</span> <span class="op">&lt;-</span> <span class="st">'{"schema_version":"1.0","table_spec":{"parameter":{</span></span>
 <span><span class="st">              "p":{"variable":"AGE); system(\\"rm -rf /\\""}},</span></span>
 <span><span class="st">              "statistics":{"n":{"fun":"count"}},"groups":{"by":["TRT"]},</span></span>
@@ -656,10 +966,10 @@ by tooling or users.</p>
 </h2>
 <p>Compilation is ~130–150 µs per call (pure R string assembly). At that
 rate, compiling is negligible overhead even in loops or Shiny apps.</p>
-<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">1000L</span><span class="op">)</span> <span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">demog_spec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    user  system elapsed </span></span>
-<span><span class="co">#&gt; 110.901   1.781  81.074</span></span></code></pre></div>
+<span><span class="co">#&gt; 109.656   1.846  80.204</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">

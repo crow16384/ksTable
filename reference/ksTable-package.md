@@ -14,6 +14,8 @@ injection attacks (SR-1).
 
 Useful links:
 
+- <https://crow16384.github.io/ksTable/>
+
 - <https://github.com/crow16384/ksTable>
 
 - Report bugs at <https://github.com/crow16384/ksTable/issues>

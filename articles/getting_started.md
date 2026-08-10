@@ -321,19 +321,34 @@ Percentages are a **hybrid** contract: the JSON declares *how* to
 resolve `denom`, and your calc function still computes `n` / `pct` (and
 formatting via `"format"`).
 
-Common kinds:
+| `denominator.type` | Meaning | Emitted `denom =` |
+|----|----|----|
+| `n` | Rows in the current `groups.by` cell | [`dplyr::n()`](https://dplyr.tidyverse.org/reference/context.html) |
+| `n_distinct` | Distinct values of a column in the cell | `dplyr::n_distinct(<variable>)` |
+| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` | `dplyr::first(.kst_dK)` after pre-agg + join |
+| `external` | Population / big-N from the eval environment | join + `first(.kst_dK)`, or bare scalar `name` |
 
-| `denominator.type` | Meaning |
-|----|----|
-| `n` | Rows in the current `groups.by` cell ([`dplyr::n()`](https://dplyr.tidyverse.org/reference/context.html)) |
-| `n_distinct` | Distinct values of a column in the cell |
-| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` |
-| `external` | Population / big-N object from the eval environment |
+``` r
 
-### `n (pct%)` of ADSL N (`external`)
+# Round pct for readable template output
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  pct <- if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_
+  list(n = n, pct = round(pct, 1))
+}
 
-Build a population table, declare `denominator.type = "external"`, and
-bind it into the eval environment under the name given in `"name"`:
+run_denom <- function(spec, data, extras = list()) {
+  code <- kst_compile(spec)
+  env  <- new.env(parent = environment())
+  env$data <- data
+  for (nm in names(extras)) env[[nm]] <- extras[[nm]]
+  eval(parse(text = code), envir = env)
+}
+```
+
+### 1. `external` — population N (keyed tibble)
+
+Build a population table and bind it under `"name"`:
 
 ``` r
 
@@ -343,15 +358,10 @@ adsl_n
 #> 1  Drug A 160
 #> 2  Drug B 160
 #> 3 Placebo 160
-```
 
-``` r
-
-pct_spec <- '{
+ext_keyed_spec <- '{
   "schema_version": "1.0",
   "table_spec": {
-    "id": "demographics_age_pct",
-    "title": "Age: n and % of treatment arm N",
     "parameter": {
       "age": { "variable": "AGE", "label": "Age (years)" }
     },
@@ -371,12 +381,8 @@ pct_spec <- '{
     "layout": { "row_structure": "parameter_stat" }
   }
 }'
-```
 
-``` r
-
-pct_code <- kst_compile(pct_spec)
-cat(pct_code)   # shows prep join + denom = dplyr::first(.kst_d1)
+cat(kst_compile(ext_keyed_spec))
 #> .kst_d1 <- adsl_n |>
 #>   dplyr::select(TRT01P, N) |>
 #>   dplyr::rename(.kst_d1 = N)
@@ -412,25 +418,325 @@ cat(pct_code)   # shows prep join + denom = dplyr::first(.kst_d1)
 #>   names_from  = c(TRT01P),
 #>   values_from = .value
 #> )
-
-pct_env <- new.env(parent = environment())
-pct_env$data   <- adsl
-pct_env$adsl_n <- adsl_n
-pct_result <- eval(parse(text = pct_code), envir = pct_env)
-print(pct_result)
+run_denom(ext_keyed_spec, adsl, list(adsl_n = adsl_n))
 #> # A tibble: 1 × 5
 #>   .param      .stat `Drug A`   `Drug B`   Placebo   
 #>   <chr>       <chr> <chr>      <chr>      <chr>     
 #> 1 Age (years) n_pct 160 (100%) 160 (100%) 160 (100%)
 ```
 
-The same `denominator` field works on hierarchical statistics (for
-example AE counts over ADSL N). For `%` within treatment when also
-stratified by sex, use `data_n` over a subset of `groups.by`
-(e.g. `"by": ["TRT01P"]` with `"distinct": "USUBJID"` while `groups.by`
-is `["TRT01P","SEX"]`). See
+### 2. `external` — scalar big-N
+
+Omit `"by"` / `"value"` when the denominator is a single number in the
+eval env:
+
+``` r
+
+N_total <- nrow(adsl)
+
+ext_scalar_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": { "type": "external", "name": "N_total" },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(ext_scalar_spec))
+#> .raw <- data |>
+#>   dplyr::group_by(TRT01P) |>
+#>   dplyr::summarize(
+#>     .c1 = list(count_pct(AGE, denom = N_total)),
+#>     .groups = "drop"
+#>   )
+#> 
+#> .long <- .raw |>
+#>   dplyr::mutate(
+#>     TRT01P = TRT01P,
+#>     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),
+#>     .keep = "none"
+#>   ) |>
+#>   tidyr::pivot_longer(
+#>     cols = c(.c1),
+#>     names_to = ".cid",
+#>     values_to = ".value"
+#>   ) |>
+#>   dplyr::mutate(
+#>     .param = unname(c(".c1" = "Age (years)")[.cid]),
+#>     .stat  = unname(c(".c1" = "n_pct")[.cid]),
+#>     .cid = NULL
+#>   )
+#> 
+#> tidyr::pivot_wider(
+#>   .long,
+#>   id_cols     = c(.param, .stat),
+#>   names_from  = c(TRT01P),
+#>   values_from = .value
+#> )
+run_denom(ext_scalar_spec, adsl, list(N_total = N_total))
+#> # A tibble: 1 × 5
+#>   .param      .stat `Drug A`    `Drug B`    Placebo    
+#>   <chr>       <chr> <chr>       <chr>       <chr>      
+#> 1 Age (years) n_pct 160 (33.3%) 160 (33.3%) 160 (33.3%)
+```
+
+### 3. `n` — within-cell row count
+
+`denom = dplyr::n()` for the current `groups.by` cell (no prep / join):
+
+``` r
+
+n_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": { "type": "n" },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(n_spec))
+#> .raw <- data |>
+#>   dplyr::group_by(TRT01P) |>
+#>   dplyr::summarize(
+#>     .c1 = list(count_pct(AGE, denom = dplyr::n())),
+#>     .groups = "drop"
+#>   )
+#> 
+#> .long <- .raw |>
+#>   dplyr::mutate(
+#>     TRT01P = TRT01P,
+#>     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),
+#>     .keep = "none"
+#>   ) |>
+#>   tidyr::pivot_longer(
+#>     cols = c(.c1),
+#>     names_to = ".cid",
+#>     values_to = ".value"
+#>   ) |>
+#>   dplyr::mutate(
+#>     .param = unname(c(".c1" = "Age (years)")[.cid]),
+#>     .stat  = unname(c(".c1" = "n_pct")[.cid]),
+#>     .cid = NULL
+#>   )
+#> 
+#> tidyr::pivot_wider(
+#>   .long,
+#>   id_cols     = c(.param, .stat),
+#>   names_from  = c(TRT01P),
+#>   values_from = .value
+#> )
+run_denom(n_spec, adsl)
+#> # A tibble: 1 × 5
+#>   .param      .stat `Drug A`   `Drug B`   Placebo   
+#>   <chr>       <chr> <chr>      <chr>      <chr>     
+#> 1 Age (years) n_pct 160 (100%) 160 (100%) 160 (100%)
+```
+
+### 4. `n_distinct` — distinct values in the cell
+
+Useful when analysis data can have multiple rows per subject (e.g. AE
+records). Here each ADSL row is one subject, so `n` and
+`n_distinct(USUBJID)` match:
+
+``` r
+
+nd_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "n_distinct",
+          "variable": "USUBJID"
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(nd_spec))
+#> .raw <- data |>
+#>   dplyr::group_by(TRT01P) |>
+#>   dplyr::summarize(
+#>     .c1 = list(count_pct(AGE, denom = dplyr::n_distinct(USUBJID))),
+#>     .groups = "drop"
+#>   )
+#> 
+#> .long <- .raw |>
+#>   dplyr::mutate(
+#>     TRT01P = TRT01P,
+#>     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),
+#>     .keep = "none"
+#>   ) |>
+#>   tidyr::pivot_longer(
+#>     cols = c(.c1),
+#>     names_to = ".cid",
+#>     values_to = ".value"
+#>   ) |>
+#>   dplyr::mutate(
+#>     .param = unname(c(".c1" = "Age (years)")[.cid]),
+#>     .stat  = unname(c(".c1" = "n_pct")[.cid]),
+#>     .cid = NULL
+#>   )
+#> 
+#> tidyr::pivot_wider(
+#>   .long,
+#>   id_cols     = c(.param, .stat),
+#>   names_from  = c(TRT01P),
+#>   values_from = .value
+#> )
+run_denom(nd_spec, adsl)
+#> # A tibble: 1 × 5
+#>   .param      .stat `Drug A`   `Drug B`   Placebo   
+#>   <chr>       <chr> <chr>      <chr>      <chr>     
+#> 1 Age (years) n_pct 160 (100%) 160 (100%) 160 (100%)
+```
+
+On AE data, the same kind denominates event counts by distinct subjects
+in the cell:
+
+``` r
+
+nd_ae_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "pt": { "variable": "AEDECOD", "label": "Preferred Term" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "n_distinct",
+          "variable": "USUBJID"
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+run_denom(nd_ae_spec, ae)
+#> # A tibble: 1 × 5
+#>   .param         .stat `Drug A`     `Drug B`     Placebo    
+#>   <chr>          <chr> <chr>        <chr>        <chr>      
+#> 1 Preferred Term n_pct 109 (136.2%) 103 (135.5%) 88 (125.7%)
+```
+
+### 5. `data_n` — subset of `groups.by`
+
+When columns are `TRT01P × SEX`, take the denominator over **TRT only**
+(ignore SEX). Optional `"distinct"` uses `n_distinct`; omit it for row
+count.
+
+``` r
+
+data_n_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "data_n",
+          "by": ["TRT01P"],
+          "distinct": "USUBJID"
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P", "SEX"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(data_n_spec))
+#> .kst_d1 <- data |>
+#>   dplyr::group_by(TRT01P) |>
+#>   dplyr::summarize(.kst_d1 = dplyr::n_distinct(USUBJID), .groups = "drop")
+#> 
+#> .raw <- data |>
+#>   dplyr::left_join(.kst_d1, by = c("TRT01P")) |>
+#>   dplyr::group_by(TRT01P, SEX) |>
+#>   dplyr::summarize(
+#>     .c1 = list(count_pct(AGE, denom = dplyr::first(.kst_d1))),
+#>     .groups = "drop"
+#>   )
+#> 
+#> .long <- .raw |>
+#>   dplyr::mutate(
+#>     TRT01P = TRT01P,
+#>     SEX = SEX,
+#>     .c1 = vapply(.c1, function(.x) glue::glue_data(.x, "{n} ({pct}%)"), character(1L)),
+#>     .keep = "none"
+#>   ) |>
+#>   tidyr::pivot_longer(
+#>     cols = c(.c1),
+#>     names_to = ".cid",
+#>     values_to = ".value"
+#>   ) |>
+#>   dplyr::mutate(
+#>     .param = unname(c(".c1" = "Age (years)")[.cid]),
+#>     .stat  = unname(c(".c1" = "n_pct")[.cid]),
+#>     .cid = NULL
+#>   )
+#> 
+#> tidyr::pivot_wider(
+#>   .long,
+#>   id_cols     = c(.param, .stat),
+#>   names_from  = c(TRT01P, SEX),
+#>   values_from = .value
+#> )
+run_denom(data_n_spec, adsl)
+#> # A tibble: 1 × 8
+#>   .param   .stat `Drug A_F` `Drug A_M` `Drug B_F` `Drug B_M` Placebo_F Placebo_M
+#>   <chr>    <chr> <chr>      <chr>      <chr>      <chr>      <chr>     <chr>    
+#> 1 Age (ye… n_pct 85 (53.1%) 75 (46.9%) 70 (43.8%) 90 (56.2%) 80 (50%)  80 (50%)
+```
+
+Rules that apply to every kind:
+
+- `data_n.by` / `external.by` must be a subset of `groups.by`.
+- `external` with `by` requires `value` (N column name).
+- Do not set both `denominator` and `args.denom`.
+- Identical denom specs are deduplicated to one prep table / join.
+- The same `denominator` field works on hierarchical statistics.
+
+See
 [`vignette("dsl_reference")`](https://crow16384.github.io/ksTable/articles/dsl_reference.md)
-for the full reference.
+for the field schema.
 
 ------------------------------------------------------------------------
 
@@ -567,7 +873,7 @@ rate, compiling is negligible overhead even in loops or Shiny apps.
 
 system.time(for (i in 1:1000L) kst_compile(demog_spec))
 #>    user  system elapsed 
-#> 110.901   1.781  81.074
+#> 109.656   1.846  80.204
 ```
 
 ------------------------------------------------------------------------

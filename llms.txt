@@ -183,6 +183,26 @@ Locally:
 [`pkgdown::build_site()`](https://pkgdown.r-lib.org/reference/build_site.html)
 (writes to `docs/`).
 
+### RStudio Addin — Spec Builder
+
+Install Suggested UI packages, then use **Tools → Addins → ksTable Spec
+Builder** (or call
+[`kst_spec_builder()`](https://crow16384.github.io/ksTable/reference/kst_spec_builder.md)):
+
+``` r
+
+install.packages(c("shiny", "miniUI", "rstudioapi"))
+# optional JSON highlighting:
+install.packages("shinyAce")
+
+kst_spec_builder()
+```
+
+The gadget edits the JSON DSL with forms on the left and JSON on the
+right (two-way sync). Actions: Validate, Insert JSON at cursor, Save
+JSON, Compile→`.R` via
+[`kst_save()`](https://crow16384.github.io/ksTable/reference/kst_save.md).
+
 Bump / sync the package version (DESCRIPTION → README, NEWS, vignettes,
 …):
 
@@ -216,6 +236,13 @@ Validate a JSON spec and emit or save a dplyr/tidyr script.
   : Save a compiled table script to an R file
 - [`kst_validate_spec()`](https://crow16384.github.io/ksTable/reference/kst_validate_spec.md)
   : Validate a JSON DSL table specification
+
+## Spec Builder (RStudio Addin)
+
+Interactive forms + JSON gadget for building table specs.
+
+- [`kst_spec_builder()`](https://crow16384.github.io/ksTable/reference/kst_spec_builder.md)
+  : Launch the ksTable Spec Builder (RStudio Addin)
 
 ## Metadata helpers
 
