@@ -11,7 +11,7 @@ MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://crow16384.git
 [![GitHub
 issues](https://img.shields.io/github/issues/crow16384/ksTable)](https://github.com/crow16384/ksTable/issues)
 
-> **Status**: Usable v0.1.0 compiler — `parameter_stat` and 2-level
+> **Status**: Usable v0.2.0 compiler — `parameter_stat` and 2-level
 > `hierarchical` layouts
 
 ------------------------------------------------------------------------
@@ -183,6 +183,16 @@ Locally:
 [`pkgdown::build_site()`](https://pkgdown.r-lib.org/reference/build_site.html)
 (writes to `docs/`).
 
+Bump / sync the package version (DESCRIPTION → README, NEWS, vignettes,
+…):
+
+``` r
+Rscript scripts/bump_version.R patch       # or minor / major / 0.2.1
+Rscript scripts/bump_version.R --sync-only # re-sync without bumping
+```
+
+pkgdown reads `DESCRIPTION` `Version` automatically for the site navbar.
+
 ------------------------------------------------------------------------
 
 ## License
@@ -192,4 +202,4 @@ Larchenko](mailto:crow16384@gmail.com)
 
 **Issues**: [GitHub Issues](https://github.com/crow16384/ksTable/issues)
 
-**Last Updated**: 2026-08-09 · **Version**: 0.1.0
+**Last Updated**: 2026-08-10 · **Version**: 0.2.0

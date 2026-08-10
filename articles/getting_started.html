@@ -25,7 +25,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">ksTable</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -79,6 +79,7 @@
 
     
     
+<p><em>Package version 0.2.0.</em></p>
 <p><img src="figures/logo.png" class="r-plt" alt="ksTable logo" width="120px"></p>
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
@@ -658,7 +659,7 @@ rate, compiling is negligible overhead even in loops or Shiny apps.</p>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">1000L</span><span class="op">)</span> <span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">demog_spec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    user  system elapsed </span></span>
-<span><span class="co">#&gt; 122.106   1.872  91.504</span></span></code></pre></div>
+<span><span class="co">#&gt; 110.901   1.781  81.074</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">

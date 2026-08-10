@@ -2,7 +2,7 @@
 
 **Project**: JSON DSL to Dplyr Code Generator for Clinical Tables  
 **Date**: 2026-08-09  
-**Status**: v0.1.0 usable — Phases 1–7 complete for two layouts;
+**Status**: v0.2.0 usable — Phases 1–7 complete for two layouts;
 parameter_stat uses single-pass summarize
 
 ## Overview

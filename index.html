@@ -30,7 +30,7 @@
 
     <a class="navbar-brand me-2" href="index.html">ksTable</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -78,7 +78,7 @@
 <p><strong>JSON DSL to Dplyr Code Generator for Clinical Tables</strong></p>
 <p><a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a> <a href="https://www.r-project.org/" class="external-link"><img src="https://img.shields.io/badge/R-%E2%89%A5%204.1-blue.svg" alt="R: ≥ 4.1"></a> <a href="https://github.com/crow16384/ksTable/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/crow16384/ksTable/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://crow16384.github.io/ksTable/"><img src="https://github.com/crow16384/ksTable/actions/workflows/pkgdown.yaml/badge.svg" alt="pkgdown"></a> <a href="https://github.com/crow16384/ksTable/issues" class="external-link"><img src="https://img.shields.io/github/issues/crow16384/ksTable" alt="GitHub issues"></a></p>
 <blockquote>
-<p><strong>Status</strong>: Usable v0.1.0 compiler — <code>parameter_stat</code> and 2-level <code>hierarchical</code> layouts</p>
+<p><strong>Status</strong>: Usable v0.2.0 compiler — <code>parameter_stat</code> and 2-level <code>hierarchical</code> layouts</p>
 </blockquote>
 <hr>
 <div class="section level2">
@@ -248,6 +248,10 @@
 </h2>
 <p>Package website: <a href="https://crow16384.github.io/ksTable/" class="uri">https://crow16384.github.io/ksTable/</a></p>
 <p>Locally: <code><a href="https://pkgdown.r-lib.org/reference/build_site.html" class="external-link">pkgdown::build_site()</a></code> (writes to <code>docs/</code>).</p>
+<p>Bump / sync the package version (DESCRIPTION → README, NEWS, vignettes, …):</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>Rscript scripts<span class="sc">/</span>bump_version.R patch       <span class="co"># or minor / major / 0.2.1</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>Rscript scripts<span class="sc">/</span>bump_version.R <span class="sc">--</span>sync<span class="sc">-</span>only <span class="co"># re-sync without bumping</span></span></code></pre></div>
+<p>pkgdown reads <code>DESCRIPTION</code> <code>Version</code> automatically for the site navbar.</p>
 <hr>
 </div>
 <div class="section level2">
@@ -255,7 +259,7 @@
 </h2>
 <p>MIT License — Copyright (c) 2026 <a href="mailto:crow16384@gmail.com">Vladimir Larchenko</a></p>
 <p><strong>Issues</strong>: <a href="https://github.com/crow16384/ksTable/issues" class="external-link">GitHub Issues</a></p>
-<p><strong>Last Updated</strong>: 2026-08-09 · <strong>Version</strong>: 0.1.0</p>
+<p><strong>Last Updated</strong>: 2026-08-10 · <strong>Version</strong>: 0.2.0</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

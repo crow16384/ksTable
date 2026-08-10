@@ -1,5 +1,7 @@
 # DSL Reference
 
+*Package version 0.2.0.*
+
 ![ksTable logo](figures/logo.png)
 
 This document describes every field in the `ksTable` JSON DSL.

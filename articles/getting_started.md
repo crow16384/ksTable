@@ -1,5 +1,7 @@
 # Getting Started with ksTable
 
+*Package version 0.2.0.*
+
 ![ksTable logo](figures/logo.png)
 
 ## Overview
@@ -565,7 +567,7 @@ rate, compiling is negligible overhead even in loops or Shiny apps.
 
 system.time(for (i in 1:1000L) kst_compile(demog_spec))
 #>    user  system elapsed 
-#> 122.106   1.872  91.504
+#> 110.901   1.781  81.074
 ```
 
 ------------------------------------------------------------------------
