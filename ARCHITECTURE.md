@@ -172,7 +172,7 @@ Generated dplyr is equivalent to hand-written pipelines.
 
 ## Future (v1.1+)
 
-Documented only — not implemented in 0.1.0:
+Documented only — not implemented in 0.2.0:
 
 - `shift_matrix`, `listing`
 - Hierarchical nesting depth > 2; multi-statistic hierarchical

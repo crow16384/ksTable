@@ -8,7 +8,7 @@
 [![pkgdown](https://github.com/crow16384/ksTable/actions/workflows/pkgdown.yaml/badge.svg)](https://crow16384.github.io/ksTable/)
 [![GitHub issues](https://img.shields.io/github/issues/crow16384/ksTable)](https://github.com/crow16384/ksTable/issues)
 
-> **Status**: Usable v0.1.0 compiler — `parameter_stat` and 2-level `hierarchical` layouts
+> **Status**: Usable v0.2.0 compiler — `parameter_stat` and 2-level `hierarchical` layouts
 
 ---
 
@@ -159,6 +159,15 @@ Package website: <https://crow16384.github.io/ksTable/>
 
 Locally: `pkgdown::build_site()` (writes to `docs/`).
 
+Bump / sync the package version (DESCRIPTION → README, NEWS, vignettes, …):
+
+```r
+Rscript scripts/bump_version.R patch       # or minor / major / 0.2.1
+Rscript scripts/bump_version.R --sync-only # re-sync without bumping
+```
+
+pkgdown reads `DESCRIPTION` `Version` automatically for the site navbar.
+
 ---
 
 ## License
@@ -167,4 +176,4 @@ MIT License — Copyright (c) 2026 [Vladimir Larchenko](mailto:crow16384@gmail.c
 
 **Issues**: [GitHub Issues](https://github.com/crow16384/ksTable/issues)
 
-**Last Updated**: 2026-08-09 · **Version**: 0.1.0
+**Last Updated**: 2026-08-10 · **Version**: 0.2.0

@@ -7,6 +7,18 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+```{r kst_pkg_version, echo = FALSE}
+kst_pkg_version <- tryCatch(
+  as.character(utils::packageVersion("ksTable")),
+  error = function(e) {
+    desc <- if (file.exists("DESCRIPTION")) "DESCRIPTION" else "../DESCRIPTION"
+    unname(read.dcf(desc)[1L, "Version"])
+  }
+)
+```
+
+*Package version `r kst_pkg_version`.*
+
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,

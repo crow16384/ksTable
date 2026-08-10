@@ -1,5 +1,12 @@
 # News
 
+## ksTable 0.2.0 (2026-08-10)
+
+* CRAN-style hex sticker package logo; pkgdown favicons refreshed.
+* `scripts/bump_version.R` — bump DESCRIPTION and sync README / PLAN /
+  ARCHITECTURE / NEWS / vignette version lines (`--sync-only` supported).
+* pkgdown site continues to read the version from DESCRIPTION automatically.
+
 ## ksTable 0.1.0 (2026-08-09)
 
 First usable release. Core DSL-to-dplyr compiler for two layouts.
