@@ -177,7 +177,60 @@ count_pct <- function(x, denom, ...) {
 | `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` (`distinct` optional) | `dplyr::first(.kst_dK)` after pre-agg + join |
 | `external` | Object from the eval environment (population / big-N). With `by`, join keyed columns; without `by`, treat as a scalar symbol | `dplyr::first(.kst_dK)` or bare `name` |
 
-**Population % (AE / ADSL N):**
+#### `type: "n"` — within-cell row count
+
+```json
+"n_pct": {
+  "fun": "count_pct",
+  "denominator": { "type": "n" },
+  "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+}
+```
+
+Generated: `count_pct(AGE, denom = dplyr::n())` (no prep table).
+
+#### `type: "n_distinct"` — distinct column in the cell
+
+```json
+"n_pct": {
+  "fun": "count_pct",
+  "denominator": {
+    "type": "n_distinct",
+    "variable": "USUBJID"
+  },
+  "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+}
+```
+
+Generated: `count_pct(AGE, denom = dplyr::n_distinct(USUBJID))`.
+Requires `"variable"` (SR-1 identifier).
+
+#### `type: "data_n"` — subset of `groups.by` from analysis data
+
+Use when the table is stratified more finely than the percent denominator
+(e.g. columns `TRT01P × SEX`, denom over `TRT01P` only):
+
+```json
+"groups": { "by": ["TRT01P", "SEX"] },
+"statistics": {
+  "n_pct": {
+    "fun": "count_pct",
+    "denominator": {
+      "type": "data_n",
+      "by": ["TRT01P"],
+      "distinct": "USUBJID"
+    },
+    "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+  }
+}
+```
+
+Omit `"distinct"` to use row count (`dplyr::n()`) in the pre-aggregate.
+`"by"` is required and must be a subset of `groups.by`.
+
+#### `type: "external"` — population / big-N from the eval environment
+
+**Keyed tibble** (usual ADSL N by arm):
 
 ```json
 "n_pct": {
@@ -192,33 +245,28 @@ count_pct <- function(x, denom, ...) {
 }
 ```
 
-Bind `adsl_n` (a tibble with `TRT01P` and `N`) into the eval environment before
-running the compiled script.
+Bind `adsl_n` (columns `TRT01P`, `N`) into the eval environment. With `"by"`,
+`"value"` is required. The compiler emits a rename + `left_join` and
+`denom = dplyr::first(.kst_dK)`.
 
-**% within TRT when also stratified by SEX (data-derived):**
-
-```json
-"denominator": {
-  "type": "data_n",
-  "by": ["TRT01P"],
-  "distinct": "USUBJID"
-}
-```
-
-(`groups.by` might be `["TRT01P","SEX"]`; the denom ignores SEX.)
-
-**Within-cell row count:**
+**Scalar** (omit `"by"` / `"value"`):
 
 ```json
-"denominator": { "type": "n" }
+"denominator": { "type": "external", "name": "N_total" }
 ```
 
-Rules:
+Generated: `denom = N_total` (symbol resolved from the eval environment).
+
+#### Validation rules
 
 - `data_n.by` / `external.by` must be a subset of `groups.by`.
 - `external` with `by` requires `value` (N column name).
 - Setting both `denominator` and `args.denom` is a validation error.
 - Identical denom specs are deduplicated to one prep table / join.
+- Hierarchical layouts use the same field on the single active statistic.
+
+Worked compile+eval examples for every kind are in
+`vignette("getting_started")`.
 
 ### `format`
 

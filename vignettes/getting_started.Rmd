@@ -285,31 +285,41 @@ Percentages are a **hybrid** contract: the JSON declares *how* to resolve
 `denom`, and your calc function still computes `n` / `pct` (and formatting
 via `"format"`).
 
-Common kinds:
+| `denominator.type` | Meaning | Emitted `denom =` |
+|--------------------|---------|-------------------|
+| `n` | Rows in the current `groups.by` cell | `dplyr::n()` |
+| `n_distinct` | Distinct values of a column in the cell | `dplyr::n_distinct(<variable>)` |
+| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` | `dplyr::first(.kst_dK)` after pre-agg + join |
+| `external` | Population / big-N from the eval environment | join + `first(.kst_dK)`, or bare scalar `name` |
 
-| `denominator.type` | Meaning |
-|--------------------|---------|
-| `n` | Rows in the current `groups.by` cell (`dplyr::n()`) |
-| `n_distinct` | Distinct values of a column in the cell |
-| `data_n` | Aggregate analysis `data` over a **subset** of `groups.by` |
-| `external` | Population / big-N object from the eval environment |
+```{r denom-helpers}
+# Round pct for readable template output
+count_pct <- function(x, denom, ...) {
+  n <- sum(!is.na(x))
+  pct <- if (length(denom) == 1L && isTRUE(denom > 0)) 100 * n / denom else NA_real_
+  list(n = n, pct = round(pct, 1))
+}
 
-### `n (pct%)` of ADSL N (`external`)
-
-Build a population table, declare `denominator.type = "external"`, and bind
-it into the eval environment under the name given in `"name"`:
-
-```{r ae-denom-prep}
-adsl_n <- dplyr::count(adsl, TRT01P, name = "N")
-adsl_n
+run_denom <- function(spec, data, extras = list()) {
+  code <- kst_compile(spec)
+  env  <- new.env(parent = environment())
+  env$data <- data
+  for (nm in names(extras)) env[[nm]] <- extras[[nm]]
+  eval(parse(text = code), envir = env)
+}
 ```
 
-```{r demog-pct-json}
-pct_spec <- '{
+### 1. `external` — population N (keyed tibble)
+
+Build a population table and bind it under `"name"`:
+
+```{r denom-external-keyed}
+adsl_n <- dplyr::count(adsl, TRT01P, name = "N")
+adsl_n
+
+ext_keyed_spec <- '{
   "schema_version": "1.0",
   "table_spec": {
-    "id": "demographics_age_pct",
-    "title": "Age: n and % of treatment arm N",
     "parameter": {
       "age": { "variable": "AGE", "label": "Age (years)" }
     },
@@ -329,24 +339,167 @@ pct_spec <- '{
     "layout": { "row_structure": "parameter_stat" }
   }
 }'
+
+cat(kst_compile(ext_keyed_spec))
+run_denom(ext_keyed_spec, adsl, list(adsl_n = adsl_n))
 ```
 
-```{r generate-demog-pct}
-pct_code <- kst_compile(pct_spec)
-cat(pct_code)   # shows prep join + denom = dplyr::first(.kst_d1)
+### 2. `external` — scalar big-N
 
-pct_env <- new.env(parent = environment())
-pct_env$data   <- adsl
-pct_env$adsl_n <- adsl_n
-pct_result <- eval(parse(text = pct_code), envir = pct_env)
-print(pct_result)
+Omit `"by"` / `"value"` when the denominator is a single number in the eval env:
+
+```{r denom-external-scalar}
+N_total <- nrow(adsl)
+
+ext_scalar_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": { "type": "external", "name": "N_total" },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(ext_scalar_spec))
+run_denom(ext_scalar_spec, adsl, list(N_total = N_total))
 ```
 
-The same `denominator` field works on hierarchical statistics (for example AE
-counts over ADSL N). For `%` within treatment when also stratified by sex,
-use `data_n` over a subset of `groups.by` (e.g. `"by": ["TRT01P"]` with
-`"distinct": "USUBJID"` while `groups.by` is `["TRT01P","SEX"]`). See
-`vignette("dsl_reference")` for the full reference.
+### 3. `n` — within-cell row count
+
+`denom = dplyr::n()` for the current `groups.by` cell (no prep / join):
+
+```{r denom-n}
+n_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": { "type": "n" },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(n_spec))
+run_denom(n_spec, adsl)
+```
+
+### 4. `n_distinct` — distinct values in the cell
+
+Useful when analysis data can have multiple rows per subject (e.g. AE records).
+Here each ADSL row is one subject, so `n` and `n_distinct(USUBJID)` match:
+
+```{r denom-n-distinct}
+nd_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "n_distinct",
+          "variable": "USUBJID"
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(nd_spec))
+run_denom(nd_spec, adsl)
+```
+
+On AE data, the same kind denominates event counts by distinct subjects in the
+cell:
+
+```{r denom-n-distinct-ae}
+nd_ae_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "pt": { "variable": "AEDECOD", "label": "Preferred Term" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "n_distinct",
+          "variable": "USUBJID"
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+run_denom(nd_ae_spec, ae)
+```
+
+### 5. `data_n` — subset of `groups.by`
+
+When columns are `TRT01P × SEX`, take the denominator over **TRT only**
+(ignore SEX). Optional `"distinct"` uses `n_distinct`; omit it for row count.
+
+```{r denom-data-n}
+data_n_spec <- '{
+  "schema_version": "1.0",
+  "table_spec": {
+    "parameter": {
+      "age": { "variable": "AGE", "label": "Age (years)" }
+    },
+    "statistics": {
+      "n_pct": {
+        "fun": "count_pct",
+        "denominator": {
+          "type": "data_n",
+          "by": ["TRT01P"],
+          "distinct": "USUBJID"
+        },
+        "format": { "type": "template", "pattern": "{n} ({pct}%)" }
+      }
+    },
+    "groups": { "by": ["TRT01P", "SEX"] },
+    "layout": { "row_structure": "parameter_stat" }
+  }
+}'
+
+cat(kst_compile(data_n_spec))
+run_denom(data_n_spec, adsl)
+```
+
+Rules that apply to every kind:
+
+* `data_n.by` / `external.by` must be a subset of `groups.by`.
+* `external` with `by` requires `value` (N column name).
+* Do not set both `denominator` and `args.denom`.
+* Identical denom specs are deduplicated to one prep table / join.
+* The same `denominator` field works on hierarchical statistics.
+
+See `vignette("dsl_reference")` for the field schema.
 
 ---
 
