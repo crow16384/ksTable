@@ -342,10 +342,14 @@ spec_builder_app <- function(start_spec) {
       params <- rv$spec$table_spec$parameter %||% list()
       ids <- names(params)
       if (!length(ids)) ids <- character(0)
+      # Keep prefer_param until input$param_sel catches up. Clearing it on the
+      # first renderUI pass lets a second invalidation fall back to the old
+      # selection (common when Add recreates this panel).
       prefer <- rv$prefer_param
-      rv$prefer_param <- NULL
       sel <- prefer %||% input$param_sel
       if (is.null(sel) || !sel %in% ids) sel <- if (length(ids)) ids[[1L]] else ""
+      if (!is.null(prefer) && identical(input$param_sel, prefer))
+        rv$prefer_param <- NULL
       p <- if (nzchar(sel) && !is.null(params[[sel]])) params[[sel]] else list()
 
       vars <- p[["variables"]]
@@ -424,6 +428,11 @@ spec_builder_app <- function(start_spec) {
       rv$prefer_param <- id
       push_spec_from_forms(sp)
       rv$form_tick <- rv$form_tick + 1L
+      # selectInput recreation often keeps the previous client value; force
+      # the new id after the UI flush so the form shows the new parameter.
+      session$onFlushed(function() {
+        shiny::updateSelectInput(session, "param_sel", selected = id)
+      }, once = TRUE)
     })
 
     shiny::observeEvent(input$param_del, {
