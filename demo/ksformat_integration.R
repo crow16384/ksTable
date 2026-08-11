@@ -357,7 +357,7 @@ result <- dplyr::bind_rows(
 )
 print(result, n = Inf, width = 140)
 
-cat("\n-- Declarative denominator (external adsl_n → denom=) -----------------\n")
+cat("\n-- Declarative denominator (external adsl_n -> denom=) -----------------\n")
 code_denom <- kst_compile(spec_denom)
 cat(code_denom, "\n\n")
 env_denom <- new.env(parent = environment())

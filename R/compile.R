@@ -1,4 +1,4 @@
-# R/compile.R ──────────────────────────────────────────────────────────────
+# R/compile.R --------------------------------------------------------------
 # Public API: kst_compile() and kst_save().
 
 #' Compile a JSON DSL table spec to a plain R script
@@ -8,7 +8,7 @@
 #' R script. The script expects a variable named \code{data} in its evaluation
 #' environment. Calc and format functions referenced in the spec (e.g.
 #' \code{"fun": "count"}) are emitted as bare calls and resolved from the same
-#' environment at runtime — no lists to build, no registry to populate.
+#' environment at runtime - no lists to build, no registry to populate.
 #'
 #' Metadata (factor levels, ksformat labels) is \strong{not} applied during
 #' compile. Use \code{\link{kst_extract_metadata}} and
@@ -19,7 +19,7 @@
 #'
 #' @param json_spec  JSON string or path to a \code{.json} file.
 #'
-#' @return \code{character(1)} — a plain R script ready to be read, modified,
+#' @return \code{character(1)} - a plain R script ready to be read, modified,
 #'   saved, or executed with \code{eval(parse(text = code), envir = env)}.
 #'
 #' @seealso \code{\link{kst_save}}, \code{\link{kst_validate_spec}},

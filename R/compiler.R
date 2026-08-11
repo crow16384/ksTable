@@ -1,5 +1,5 @@
-# R/compiler.R ─────────────────────────────────────────────────────────────
-# Internal DSL → dplyr code generator.
+# R/compiler.R -------------------------------------------------------------
+# Internal DSL -> dplyr code generator.
 # All functions are package-private; the public API lives in compile.R.
 #
 # Generated code is a plain R script that expects `data` to be bound in the
@@ -37,7 +37,7 @@ gen_group_by <- function(vars, drop) {
 
 # Serialize a statistics `"args"` object to an extra-arguments string that
 # can be appended inside a function call.
-#   JSON: { "na.rm": true, "digits": 2 }  →  R: ", na.rm = TRUE, digits = 2"
+#   JSON: { "na.rm": true, "digits": 2 }  ->  R: ", na.rm = TRUE, digits = 2"
 # Argument names are validated (SR-1). Values are type-converted to R literals.
 # Scalars become bare literals; multi-element arrays become c(...) so vector
 # arguments (e.g. probs = c(0.25, 0.5, 0.75)) are emitted safely.
@@ -77,7 +77,7 @@ needs_list_wrap <- function(fmt) {
 has_format <- function(s) !is.null(s$format) && !is.null(s$format$type)
 
 # Generate a format expression for a raw-value symbol, or NULL when no format
-# was specified (caller keeps the raw value — no silent as.character()).
+# was specified (caller keeps the raw value - no silent as.character()).
 gen_format_expr <- function(s, raw_sym = ".value_raw") {
   if (!has_format(s)) return(NULL)
   fmt <- s$format
@@ -98,7 +98,7 @@ gen_format_expr <- function(s, raw_sym = ".value_raw") {
   )
 }
 
-# ── Denominator helpers (statistics.*.denominator → denom = ...) ───────────
+# -- Denominator helpers (statistics.*.denominator -> denom = ...) -----------
 
 # Stable key for deduplicating identical denominator specs.
 denom_fingerprint <- function(d) {
@@ -221,7 +221,7 @@ format_call_extras <- function(args, denom_expr = NULL) {
   )
 }
 
-# Expand parameter_stat into ordered calc rows (one per param × var × stat).
+# Expand parameter_stat into ordered calc rows (one per param x var x stat).
 # Each row becomes a temporary column `.cN` in a single summarize().
 build_calc_plan <- function(ts) {
   params <- ts$parameter
@@ -281,7 +281,7 @@ build_calc_plan <- function(ts) {
   plan
 }
 
-# ── Layout generators ──────────────────────────────────────────────────────
+# -- Layout generators ------------------------------------------------------
 
 # parameter_stat: single group_by + summarize, optional format mutate with
 # .keep = "none", pivot_longer to (.param, .stat), pivot_wider on groups.
@@ -333,7 +333,7 @@ gen_parameter_stat <- function(ts) {
     gen_format_expr(row$stat_spec, raw_sym = row$cid))
   needs_format <- any(!vapply(fmt_exprs, is.null, logical(1L)))
 
-  # Named-vector maps from temp ids → labels / stat keys
+  # Named-vector maps from temp ids -> labels / stat keys
   param_map <- paste0(
     "c(",
     paste(vapply(plan, function(row) {
@@ -405,7 +405,7 @@ gen_parameter_stat <- function(ts) {
   )
 }
 
-# hierarchical: parent rows + child rows (e.g., SOC → PT), columns = group levels.
+# hierarchical: parent rows + child rows (e.g., SOC -> PT), columns = group levels.
 # v0.1 limitation: first parameter, first nested child, first statistic only.
 gen_hierarchical <- function(ts) {
   params <- ts$parameter
@@ -511,7 +511,7 @@ gen_hierarchical <- function(ts) {
   )
 }
 
-# ── Internal compile entry-point ───────────────────────────────────────────
+# -- Internal compile entry-point -------------------------------------------
 
 # Compile a parsed table spec to a plain R script string.
 # Called by the public kst_compile(); separated to allow future caching.

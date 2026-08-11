@@ -1,4 +1,4 @@
-# R/shiny_spec_builder.R ───────────────────────────────────────────────────
+# R/shiny_spec_builder.R ---------------------------------------------------
 # miniUI Shiny gadget: forms + JSON two-way sync for ksTable DSL specs.
 # Requires Suggested packages shiny + miniUI (checked by kst_spec_builder()).
 
@@ -28,7 +28,7 @@ kst_denom_help_panel <- function(type) {
     "n" = "No extra fields. Emitted as denom = dplyr::n().",
     "n_distinct" = "Requires variable (e.g. USUBJID). Emitted as denom = dplyr::n_distinct(VAR).",
     "data_n" = paste(
-      "Requires by (subset of groups.by). Optional distinct → n_distinct during pre-agg;",
+      "Requires by (subset of groups.by). Optional distinct -> n_distinct during pre-agg;",
       "omit distinct for row count. Compiler builds .kst_dK and uses dplyr::first(.kst_dK)."
     ),
     "external" = paste(
@@ -68,7 +68,7 @@ spec_builder_app <- function(start_spec) {
           shiny::selectInput(
             "load_example",
             "Load packaged example",
-            choices = c("(choose…)" = "", stats::setNames(spec_list_examples(),
+            choices = c("(choose...)" = "", stats::setNames(spec_list_examples(),
                                                           spec_list_examples())),
             width = "100%"
           ),
@@ -146,11 +146,11 @@ spec_builder_app <- function(start_spec) {
       )
     ),
     miniUI::miniButtonBlock(
-      shiny::actionButton("btn_load_file", "Load file…"),
+      shiny::actionButton("btn_load_file", "Load file..."),
       shiny::actionButton("btn_validate", "Validate", class = "btn-info"),
       shiny::actionButton("btn_insert", "Insert JSON", class = "btn-primary"),
       shiny::actionButton("btn_save_json", "Save JSON"),
-      shiny::actionButton("btn_compile", "Compile→.R", class = "btn-success")
+      shiny::actionButton("btn_compile", "Compile->.R", class = "btn-success")
     )
   )
 
@@ -187,7 +187,7 @@ spec_builder_app <- function(start_spec) {
       set_json_text(spec_to_json(new_spec))
     }
 
-    # Debounced JSON → spec
+    # Debounced JSON -> spec
     json_debounced <- shiny::debounce(
       shiny::reactive(input$json_text %||% ""),
       300
@@ -219,17 +219,17 @@ spec_builder_app <- function(start_spec) {
       shiny::div(
         class = "alert alert-warning",
         style = "padding: 6px 10px; margin-bottom: 8px;",
-        shiny::strong("JSON parse error — forms paused. "),
+        shiny::strong("JSON parse error - forms paused. "),
         rv$json_error %||% ""
       )
     })
 
     output$json_status <- shiny::renderText({
       if (isTRUE(rv$json_ok)) "JSON: OK"
-      else paste0("JSON: ERROR — ", rv$json_error %||% "")
+      else paste0("JSON: ERROR - ", rv$json_error %||% "")
     })
 
-    # ── Meta ──────────────────────────────────────────────────────────────
+    # -- Meta --------------------------------------------------------------
     output$form_meta <- shiny::renderUI({
       rv$form_tick
       ts <- rv$spec$table_spec %||% list()
@@ -253,7 +253,7 @@ spec_builder_app <- function(start_spec) {
       push_spec_from_forms(sp)
     })
 
-    # ── Groups ────────────────────────────────────────────────────────────
+    # -- Groups ------------------------------------------------------------
     output$form_groups <- shiny::renderUI({
       rv$form_tick
       g <- rv$spec$table_spec$groups %||% list()
@@ -278,7 +278,7 @@ spec_builder_app <- function(start_spec) {
         kst_field_help(
           "Optional documentation: COL=ksformat_name pairs. The compiler does ",
           shiny::tags$em("not"),
-          " apply these — pass the same mapping as format_map to metadata helpers. ",
+          " apply these - pass the same mapping as format_map to metadata helpers. ",
           "Example: TRT01P=trt_fmt, SEX=sex_fmt"
         ),
         shiny::actionButton("groups_apply", "Apply groups", class = "btn-sm")
@@ -304,7 +304,7 @@ spec_builder_app <- function(start_spec) {
       push_spec_from_forms(sp)
     })
 
-    # ── Layout ────────────────────────────────────────────────────────────
+    # -- Layout ------------------------------------------------------------
     output$form_layout <- shiny::renderUI({
       rv$form_tick
       ly <- rv$spec$table_spec$layout %||% list()
@@ -315,8 +315,8 @@ spec_builder_app <- function(start_spec) {
           selected = ly$row_structure %||% "parameter_stat"
         ),
         kst_field_help(
-          shiny::tags$b("parameter_stat"), ": one row per parameter × statistic; columns = group levels. ",
-          shiny::tags$b("hierarchical"), ": parent + one nested child (e.g. SOC → PT); uses first parameter, ",
+          shiny::tags$b("parameter_stat"), ": one row per parameter x statistic; columns = group levels. ",
+          shiny::tags$b("hierarchical"), ": parent + one nested child (e.g. SOC -> PT); uses first parameter, ",
           "first nested child, and first statistic only."
         ),
         shiny::selectInput(
@@ -336,7 +336,7 @@ spec_builder_app <- function(start_spec) {
       push_spec_from_forms(sp)
     })
 
-    # ── Parameters ────────────────────────────────────────────────────────
+    # -- Parameters --------------------------------------------------------
     output$form_params <- shiny::renderUI({
       rv$form_tick
       params <- rv$spec$table_spec$parameter %||% list()
@@ -379,7 +379,7 @@ spec_builder_app <- function(start_spec) {
         shiny::hr(),
         shiny::textInput("param_id", "Rename parameter key", value = sel),
         kst_field_help(
-          "Change the JSON key for this parameter (e.g. age → cont). Must be an R identifier ",
+          "Change the JSON key for this parameter (e.g. age -> cont). Must be an R identifier ",
           "(SR-1: letters/dots/underscores). Click ", shiny::tags$b("Apply parameter"),
           " to rename."
         ),
@@ -391,7 +391,7 @@ spec_builder_app <- function(start_spec) {
         ),
         kst_field_help(
           "Single: one column via \"variable\" + optional \"label\". ",
-          "Array: \"variables\" (+ optional \"labels\") — each column gets its own row block."
+          "Array: \"variables\" (+ optional \"labels\") - each column gets its own row block."
         ),
         shiny::textInput("param_vars", "variable / variables (comma-sep)", value = var_txt),
         kst_field_help("Data column name(s). Mutually exclusive shapes: variable vs variables."),
@@ -442,7 +442,7 @@ spec_builder_app <- function(start_spec) {
       if (!grepl("^[A-Za-z.][A-Za-z0-9._]*$", new_id)) {
         rv$validate_msg <- paste0(
           "Invalid parameter key '", new_id,
-          "' — must be an R identifier (SR-1)."
+          "' - must be an R identifier (SR-1)."
         )
         return()
       }
@@ -475,12 +475,12 @@ spec_builder_app <- function(start_spec) {
       push_spec_from_forms(sp)
       rv$form_tick <- rv$form_tick + 1L
       rv$validate_msg <- if (!identical(old_id, new_id) && nzchar(old_id))
-        paste0("Renamed parameter '", old_id, "' → '", new_id, "'.")
+        paste0("Renamed parameter '", old_id, "' -> '", new_id, "'.")
       else
         paste0("Applied parameter '", new_id, "'.")
     })
 
-    # ── Statistics ────────────────────────────────────────────────────────
+    # -- Statistics --------------------------------------------------------
     output$form_stats <- shiny::renderUI({
       rv$form_tick
       stats <- rv$spec$table_spec$statistics %||% list()
@@ -522,7 +522,7 @@ spec_builder_app <- function(start_spec) {
         shiny::hr(),
         shiny::textInput("stat_id", "Rename statistic key", value = sel),
         kst_field_help(
-          "Change the JSON key (e.g. n → n_pct). Must be an R identifier (SR-1). ",
+          "Change the JSON key (e.g. n -> n_pct). Must be an R identifier (SR-1). ",
           "Click ", shiny::tags$b("Apply statistic"), " to rename."
         ),
         shiny::textInput("stat_fun", "fun", value = s$fun %||% ""),
@@ -530,10 +530,10 @@ spec_builder_app <- function(start_spec) {
           "Calc function name from the eval environment. Receives the analysis column vector; ",
           "with denominator, also gets denom = <scalar>. May return a scalar or named list."
         ),
-        shiny::textInput("stat_args", "args (k=v, …)", value = args_txt),
+        shiny::textInput("stat_args", "args (k=v, ...)", value = args_txt),
         kst_field_help(
           "Extra literal args appended to fun(...), e.g. na.rm=true, probs=0.25. ",
-          "Booleans true/false, null, numbers, or strings. Do not use args.denom — use denominator."
+          "Booleans true/false, null, numbers, or strings. Do not use args.denom - use denominator."
         ),
         shiny::textInput("stat_apply_to", "apply_to (comma-sep)", value = apply_to),
         kst_field_help(
@@ -543,8 +543,8 @@ spec_builder_app <- function(start_spec) {
         shiny::hr(),
         shiny::strong("format"),
         kst_field_help(
-          "Omit format to keep the raw type. sprintf → pattern; custom → fun; template → glue ",
-          "pattern (needs glue at eval); ksformat → format_name."
+          "Omit format to keep the raw type. sprintf -> pattern; custom -> fun; template -> glue ",
+          "pattern (needs glue at eval); ksformat -> format_name."
         ),
         shiny::selectInput(
           "stat_fmt_type", "format type",
@@ -647,7 +647,7 @@ spec_builder_app <- function(start_spec) {
       if (!grepl("^[A-Za-z.][A-Za-z0-9._]*$", new_id)) {
         rv$validate_msg <- paste0(
           "Invalid statistic key '", new_id,
-          "' — must be an R identifier (SR-1)."
+          "' - must be an R identifier (SR-1)."
         )
         return()
       }
@@ -700,12 +700,12 @@ spec_builder_app <- function(start_spec) {
       push_spec_from_forms(sp)
       rv$form_tick <- rv$form_tick + 1L
       rv$validate_msg <- if (!identical(old_id, new_id) && nzchar(old_id))
-        paste0("Renamed statistic '", old_id, "' → '", new_id, "'.")
+        paste0("Renamed statistic '", old_id, "' -> '", new_id, "'.")
       else
         paste0("Applied statistic '", new_id, "'.")
     })
 
-    # ── Preview ───────────────────────────────────────────────────────────
+    # -- Preview -----------------------------------------------------------
     output$form_preview <- shiny::renderUI({
       rv$form_tick
       v <- spec_validate_live(rv$spec)
@@ -718,12 +718,12 @@ spec_builder_app <- function(start_spec) {
         shiny::strong("Compiled script preview"),
         shiny::tags$pre(
           style = "max-height: 360px; overflow: auto; font-size: 11px;",
-          if (is.null(code)) "(fix on compile — fix validation errors first)" else code
+          if (is.null(code)) "(fix on compile - fix validation errors first)" else code
         )
       )
     })
 
-    # ── Actions ───────────────────────────────────────────────────────────
+    # -- Actions -----------------------------------------------------------
     current_json <- function() {
       if (isTRUE(rv$json_ok)) spec_to_json(rv$spec)
       else input$json_text %||% spec_to_json(rv$spec)
@@ -779,7 +779,7 @@ spec_builder_app <- function(start_spec) {
       json <- current_json()
       v <- spec_validate_live(json)
       if (!isTRUE(v$valid)) {
-        rv$validate_msg <- paste(c("Insert blocked — invalid:", v$errors), collapse = "\n")
+        rv$validate_msg <- paste(c("Insert blocked - invalid:", v$errors), collapse = "\n")
         return()
       }
       if (!requireNamespace("rstudioapi", quietly = TRUE) ||
@@ -795,7 +795,7 @@ spec_builder_app <- function(start_spec) {
       json <- current_json()
       v <- spec_validate_live(json)
       if (!isTRUE(v$valid)) {
-        rv$validate_msg <- paste(c("Save blocked — invalid:", v$errors), collapse = "\n")
+        rv$validate_msg <- paste(c("Save blocked - invalid:", v$errors), collapse = "\n")
         return()
       }
       path <- tryCatch(file.choose(new = TRUE), error = function(e) "")
@@ -810,7 +810,7 @@ spec_builder_app <- function(start_spec) {
       json <- current_json()
       v <- spec_validate_live(json)
       if (!isTRUE(v$valid)) {
-        rv$validate_msg <- paste(c("Compile blocked — invalid:", v$errors), collapse = "\n")
+        rv$validate_msg <- paste(c("Compile blocked - invalid:", v$errors), collapse = "\n")
         return()
       }
       path <- tryCatch(file.choose(new = TRUE), error = function(e) "")

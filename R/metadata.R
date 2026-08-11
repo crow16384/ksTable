@@ -1,4 +1,4 @@
-# R/metadata.R ─────────────────────────────────────────────────────────────
+# R/metadata.R -------------------------------------------------------------
 # Metadata extraction for the ksTable compiler.
 #
 # kst_extract_metadata() ensures that grouping variables are proper factors

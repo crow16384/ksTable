@@ -1,4 +1,4 @@
-# R/addin_spec_builder.R ───────────────────────────────────────────────────
+# R/addin_spec_builder.R ---------------------------------------------------
 # RStudio Addin launcher for the Spec Builder gadget.
 
 #' Launch the ksTable Spec Builder (RStudio Addin)

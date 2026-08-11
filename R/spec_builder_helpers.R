@@ -1,5 +1,5 @@
-# R/spec_builder_helpers.R ─────────────────────────────────────────────────
-# Package-private helpers for the Spec Builder addin (JSON ↔ list).
+# R/spec_builder_helpers.R -------------------------------------------------
+# Package-private helpers for the Spec Builder addin (JSON <-> list).
 
 # Pretty-print a DSL list to a JSON string.
 spec_to_json <- function(spec_list) {
@@ -103,7 +103,7 @@ spec_selection_text <- function() {
   txt
 }
 
-# Initial spec for the gadget: selection → demographics_age example → empty.
+# Initial spec for the gadget: selection -> demographics_age example -> empty.
 spec_initial <- function() {
   sel <- spec_selection_text()
   if (!is.null(sel)) {

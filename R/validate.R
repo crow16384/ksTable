@@ -1,14 +1,14 @@
-# R/validate.R ─────────────────────────────────────────────────────────────
+# R/validate.R -------------------------------------------------------------
 # JSON DSL schema validation.
 #
 # Two-layer architecture:
 #
-#   Layer 1 — JSON Schema (inst/schema/table_spec_v1.json)
+#   Layer 1 - JSON Schema (inst/schema/table_spec_v1.json)
 #     Validates structure, types, required fields, enum values, and identifier
 #     patterns using jsonvalidate + ajv.  Requires jsonvalidate (Suggests).
 #     Falls back to manual structural checks when unavailable.
 #
-#   Layer 2 — SR-1 identifier safety (always runs)
+#   Layer 2 - SR-1 identifier safety (always runs)
 #     Re-validates every identifier that appears in generated R code.
 #     Redundant when Layer 1 runs (schema already enforces patterns) but
 #     guarantees security even without jsonvalidate installed.
@@ -53,7 +53,7 @@
 #' @export
 kst_validate_spec <- function(json_spec) {
 
-  # ── Read JSON ──────────────────────────────────────────────────────────────
+  # -- Read JSON --------------------------------------------------------------
   json_spec <- tryCatch(
     read_json_spec(json_spec),
     error = function(e) structure(conditionMessage(e), class = "error_msg")
@@ -67,7 +67,7 @@ kst_validate_spec <- function(json_spec) {
   errors <- character(0)
   engine <- "manual"
 
-  # ── Layer 1a: JSON Schema validation via jsonvalidate ─────────────────────
+  # -- Layer 1a: JSON Schema validation via jsonvalidate ---------------------
   schema_path <- system.file("schema", "table_spec_v1.json",
                              package = "ksTable", mustWork = FALSE)
 
@@ -78,7 +78,7 @@ kst_validate_spec <- function(json_spec) {
     res    <- tryCatch(
       jsonvalidate::json_validate(json_spec, schema,
                                   verbose = TRUE, engine = "ajv"),
-      error = function(e) NULL   # ajv unavailable — fall through to manual
+      error = function(e) NULL   # ajv unavailable - fall through to manual
     )
 
     if (!is.null(res)) {
@@ -97,19 +97,19 @@ kst_validate_spec <- function(json_spec) {
     }
   }
 
-  # ── Layer 1b: Manual structural checks (fallback when jsonvalidate absent) ─
+  # -- Layer 1b: Manual structural checks (fallback when jsonvalidate absent) -
   if (engine == "manual") {
     errors <- c(errors, validate_structure_manual(json_spec))
   }
 
-  # ── Layer 2: SR-1 identifier safety (always runs) ─────────────────────────
+  # -- Layer 2: SR-1 identifier safety (always runs) -------------------------
   spec <- tryCatch(
     jsonlite::fromJSON(json_spec, simplifyVector = FALSE),
     error = function(e) NULL
   )
   if (!is.null(spec) && !is.null(spec$table_spec)) {
     errors <- c(errors, validate_identifiers(spec$table_spec))
-    # Semantic denom rules (by ⊆ groups.by, args.denom conflict, etc.) —
+    # Semantic denom rules (by subset of groups.by, args.denom conflict, etc.) -
     # not fully expressible in JSON Schema, so always run.
     errors <- c(errors, validate_denominator_rules(spec$table_spec))
   }
@@ -119,7 +119,7 @@ kst_validate_spec <- function(json_spec) {
        engine = engine)
 }
 
-# ── Internal: manual structural checks (Layer 1b fallback) ────────────────────
+# -- Internal: manual structural checks (Layer 1b fallback) --------------------
 
 validate_structure_manual <- function(json_spec) {
   errors <- character(0)
@@ -210,8 +210,8 @@ validate_structure_manual <- function(json_spec) {
   errors
 }
 
-# ── Internal: denominator semantic rules (always runs) ────────────────────────
-# Cross-field rules that JSON Schema cannot fully express (by ⊆ groups.by,
+# -- Internal: denominator semantic rules (always runs) ------------------------
+# Cross-field rules that JSON Schema cannot fully express (by subset of groups.by,
 # args.denom conflict, external value required when by is set).
 
 validate_denominator_rules <- function(ts) {
@@ -269,7 +269,7 @@ validate_denominator_rules <- function(ts) {
   errors
 }
 
-# ── Internal: SR-1 identifier safety (Layer 2, always runs) ───────────────────
+# -- Internal: SR-1 identifier safety (Layer 2, always runs) -------------------
 
 validate_identifiers <- function(ts) {
   errors <- character(0)
