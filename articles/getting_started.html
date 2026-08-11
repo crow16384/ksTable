@@ -969,7 +969,7 @@ rate, compiling is negligible overhead even in loops or Shiny apps.</p>
 <div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">1000L</span><span class="op">)</span> <span class="fu"><a href="../reference/kst_compile.html">kst_compile</a></span><span class="op">(</span><span class="va">demog_spec</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    user  system elapsed </span></span>
-<span><span class="co">#&gt; 123.891   2.177  90.917</span></span></code></pre></div>
+<span><span class="co">#&gt; 104.958   2.295  76.666</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">
