@@ -873,7 +873,7 @@ rate, compiling is negligible overhead even in loops or Shiny apps.
 
 system.time(for (i in 1:1000L) kst_compile(demog_spec))
 #>    user  system elapsed 
-#> 109.656   1.846  80.204
+#> 123.891   2.177  90.917
 ```
 
 ------------------------------------------------------------------------
